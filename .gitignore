@@ -1,0 +1,58 @@
+# ---------- Unreal Engine ----------
+Binaries/
+DerivedDataCache/
+Intermediate/
+Saved/
+Build/
+.vs/
+*.VC.db
+*.opensdf
+*.opendb
+*.sdf
+*.sln
+*.suo
+*.xcodeproj
+*.xcworkspace
+
+# Builds packages : JAMAIS dans le depot
+Export/
+Windows/
+Packaged/
+StagedBuilds/
+
+# ---------- Sidecar IA (Python) ----------
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+
+# Poids de modeles : trop lourds pour git, geres hors depot
+models/
+*.gguf
+*.onnx
+*.pt
+*.pth
+*.safetensors
+*.bin
+
+# ---------- Secrets ----------
+.env
+.env.*
+!.env.example
+*.key
+secrets.json
+
+# ---------- Logs & mesures ----------
+logs/
+*.log
+benchmarks/*.json
+!benchmarks/.gitkeep
+
+# ---------- OS ----------
+Thumbs.db
+desktop.ini
+.DS_Store
