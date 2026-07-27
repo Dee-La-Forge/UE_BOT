@@ -58,6 +58,12 @@ models/
 *.safetensors
 *.bin
 
+# Binaires tiers telechargeables : llama.cpp et ses DLL CUDA (~1,7 Go).
+# Oubli initial — ils etaient entres dans l'historique, qu'il a fallu
+# reecrire. Ils se reinstallent par scripts/telecharger.sh.
+tools/
+*.zip
+
 # ---------- Secrets ----------
 .env
 .env.*
