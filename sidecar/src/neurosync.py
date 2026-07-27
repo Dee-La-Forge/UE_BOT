@@ -33,7 +33,14 @@ import torch.nn.functional as F
 SR = 88200                      # taux d'echantillonnage attendu
 FPS = 60                        # trames de sortie par seconde
 DUREE_TRAME = 1.0 / FPS         # 16,67 ms
-N_MFCC = 23                     # ×3 (mfcc, delta, delta2) = 69 dims d'entree
+N_MFCC = 23                     # ×3 (mfcc, delta, delta2) = 69 dims utiles
+N_FEATURES = N_MFCC * 3         # 69
+
+# Le checkpoint Convai attend 256 dimensions alors que seules 69 portent du
+# signal. Verifie sur les poids : la norme par colonne de `encoder.embedding`
+# vaut 0.58-1.91 sur les dimensions 0-68, puis retombe a un plateau plat de
+# 0.6496 +/- 0.015 au-dela — signature de poids non entraines, donc d'entrees
+# toujours nulles. Les 187 dimensions restantes sont du remplissage.
 TAILLE_FENETRE = 128            # trames par passe
 RECOUVREMENT = 16               # trames de fondu entre fenetres
 N_BLENDSHAPES = 61              # ARKit ; les 7 suivantes sont des emotions
@@ -257,8 +264,7 @@ class NeuroSync:
 
     # -- Extraction des features -----------------------------------------
 
-    @staticmethod
-    def _features(pcm: np.ndarray, taux: int) -> np.ndarray | None:
+    def _features(self, pcm: np.ndarray, taux: int) -> np.ndarray | None:
         """PCM float32 -> matrice (trames, 69).
 
         23 MFCC + leurs derivees premiere et seconde, normalises, puis
@@ -299,7 +305,16 @@ class NeuroSync:
         if n % 2 == 1:
             paires = np.hstack((paires, empile[:, -1:]))
 
-        return paires.T.astype(np.float32)
+        features = paires.T.astype(np.float32)   # (trames, 69)
+
+        # Completion par des zeros jusqu'a la largeur attendue (256).
+        manque = self.dims.dim_entree - features.shape[1]
+        if manque > 0:
+            features = np.pad(features, ((0, 0), (0, manque)), mode="constant")
+        elif manque < 0:
+            features = features[:, : self.dims.dim_entree]
+
+        return features
 
     # -- Inference --------------------------------------------------------
 

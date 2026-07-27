@@ -1,6 +1,11 @@
-# Lipsync — NeuroSync est verrouille par Convai
+# Lipsync — etat de l'integration NeuroSync
 
-Constat du 27/07/2026, en tentant l'integration.
+> **Mise a jour du 27/07/2026, apres tentative complete.**
+> Le modele a ete obtenu et l'architecture reimplementee : les poids se
+> chargent, l'inference tourne vite, mais **le modele ne repond pas a
+> l'audio**. Voir « Resultat de l'integration » en fin de document.
+> Licence clarifiee : le modele est en **double licence MIT sous 1 M$ de
+> CA**, ce qui est plus favorable que le CC BY-NC porte par leur code.
 
 ## Ce qu'on a trouve
 
@@ -87,3 +92,80 @@ Ne pas bloquer le chantier sur une approbation d'acces.
 
 Le nettoyage du cache pip declenche pendant cette tentative a libere
 **7,4 Go**. Disque passe de 11 a 18 Go libres.
+
+---
+
+# Resultat de l'integration (27/07/2026)
+
+## Ce qui fonctionne
+
+| | |
+|---|---|
+| Chargement `strict=True` | **reussi** — 235,5 M parametres, 1026 Mo de VRAM |
+| Geometrie | 8 couches encodeur + 8 decodeur, cachee 1024, ff 4096, sortie 68 |
+| Passe avant | (N, 68), cadence 60 fps exacte |
+| Vitesse | 16 ms pour 2,13 s d'audio — **133x le temps reel** |
+
+L'inference est donc **bien plus rapide que mon estimation** de 100-200 ms.
+Si le modele fonctionnait, il n'ajouterait qu'une quinzaine de millisecondes.
+
+## Ce qui ne fonctionne pas
+
+**Le modele sort un visage quasi constant, quelle que soit l'entree.**
+
+```
+                         JawOpen moyen   ecart-type
+parole (3,3 s)              0.065          0.010
+silence (2,5 s)             0.062            —
+entree entierement nulle    0.064          0.009
+bruit aleatoire             0.069          0.012
+```
+
+Silence et parole sont indiscernables. La machoire ne bouge pas.
+
+## Pistes ecartees par la mesure
+
+| Hypothese | Test | Resultat |
+|---|---|---|
+| Mauvais nombre de tetes d'attention | balayage 2, 4, 8, 16, 32, 64 | aucun effet |
+| Ordre de normalisation | post-norm vs pre-norm | aucun effet |
+| Echelle des features | x1, x3, x10 | effet marginal |
+| Dimensions utiles mal placees | bruit sur 0-68 vs 69-255 | les deux repondent faiblement |
+
+## Ce que revele l'analyse des poids
+
+La norme par colonne de `encoder.embedding` (1024 x 256) montre :
+
+```
+dims   0-68    0.55 a 1.91     signal, 45 a 58 sigma au-dessus du plateau
+dims  69-255   0.6496 +/- 0.015  plateau plat = poids non entraines
+```
+
+Seules **69 dimensions portent du signal** — exactement les `23 MFCC x 3` du
+code public. Les 187 autres sont du remplissage. Les features extraites sont
+pourtant bien distinctes entre parole et silence (ecart absolu moyen 0,33),
+donc le probleme n'est pas l'extraction.
+
+## Diagnostic
+
+Le checkpoint Convai **diverge du code public** sur des points non
+recuperables depuis les poids : il annonce 8 couches la ou `config.py` en
+declare 4, et 256 dimensions d'entree la ou le code en produit 69. D'autres
+details — activation, RoPE actif ou non, facteur d'echelle, pretraitement —
+peuvent differer sans qu'aucune verification de forme ne le signale.
+
+`strict=True` garantit les noms et les dimensions. **Il ne garantit pas la
+semantique** : c'est precisement le mode de defaillance rencontre ici.
+
+## Decision
+
+**Retour a l'option B : les visemes MHF_\*.** Elle fonctionne, elle est
+mesuree a 0 ms de derive, elle ne coute rien et n'a aucune dependance.
+
+Le module `src/neurosync.py` est conserve : il est correct sur tout ce qui
+est verifiable, et une specification d'inference exacte suffirait a le
+rendre operationnel.
+
+**Pour debloquer un jour :** demander a Convai la specification d'inference
+correspondant a *ce* checkpoint — featurisation exacte et details
+d'architecture. Ils possedent le modele ; le code public lui est anterieur.
