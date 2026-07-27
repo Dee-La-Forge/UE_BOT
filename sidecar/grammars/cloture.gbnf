@@ -1,0 +1,15 @@
+# Grammaire de cloture forcee — au plafond de questions_max.
+#
+# Symetrique de entretien.gbnf : ici c'est EN_COURS qui devient
+# grammaticalement impossible. Le modele DOIT trancher.
+#
+# Garantit qu'un visiteur ne peut pas rester indefiniment dans
+# l'interrogatoire, meme si le modele derive.
+
+root ::= replique emotion verdict
+
+replique ::= [^\[]+
+
+emotion ::= "[EMOTION:" ("Neutral" | "Concerned" | "Angry" | "Happy" | "Stare") "]"
+
+verdict ::= "[VERDICT:" ("ACCEPTE" | "REFUSE") "]"

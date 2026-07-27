@@ -1,0 +1,12 @@
+# Grammaire de la phase de verdict — a partir de la 5e question repondue.
+#
+# Le modele peut desormais clore l'entretien. Passe le plafond de
+# questions_max, le code force la bascule (voir pipeline.py).
+
+root ::= replique emotion verdict
+
+replique ::= [^\[]+
+
+emotion ::= "[EMOTION:" ("Neutral" | "Concerned" | "Angry" | "Happy" | "Stare") "]"
+
+verdict ::= "[VERDICT:" ("EN_COURS" | "ACCEPTE" | "REFUSE") "]"

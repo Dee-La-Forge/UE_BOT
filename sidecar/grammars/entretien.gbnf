@@ -1,0 +1,16 @@
+# Grammaire de la phase d'entretien — AVANT le plancher de 5 questions.
+#
+# Le Narrative Design impose : "Do NOT deliver a verdict or transition
+# before 5 questions are answered." Convai s'en remettait au respect de la
+# consigne par le modele. Ici, le verdict est GRAMMATICALEMENT impossible :
+# EN_COURS est la seule valeur productible.
+#
+# Le modele ne peut pas ecourter l'entretien, meme s'il "decide" de le faire.
+
+root ::= replique emotion verdict
+
+replique ::= [^\[]+
+
+emotion ::= "[EMOTION:" ("Neutral" | "Concerned" | "Angry" | "Happy" | "Stare") "]"
+
+verdict ::= "[VERDICT:EN_COURS]"

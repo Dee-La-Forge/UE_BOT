@@ -66,27 +66,27 @@ demarre pendant que le LLM ecrit la suite. Cible : premier son en
 
 | Etape | Statut |
 |---|---|
-| Audit de l'existant | ✅ fait — voir `docs/AUDIT-EXISTANT.md` |
+| Audit de l'existant | ✅ fait — `docs/AUDIT-EXISTANT.md` |
 | Depot + versionnement | ✅ fait |
-| Export du Narrative Design Convai | ⏳ **bloquant** |
-| Specs materielles de la borne | ⏳ **bloquant** |
-| Prototype sidecar (STT→LLM→TTS) | ⬜ a venir |
+| Specs materielles de la borne | ✅ relevees — `docs/DIMENSIONNEMENT.md` |
+| Narrative Design Convai | 🟡 graphe recupere — `docs/NARRATIVE-DESIGN.md` |
+| Prototype sidecar (STT→LLM→TTS) | 🟡 ecrit, **jamais execute** |
+| Mesure de latence reelle | ⬜ **prochaine etape** |
 | Integration Unreal | ⬜ a venir |
 
-## Points bloquants
+## Reste a recuperer depuis Convai
 
-**1. Exporter le Narrative Design depuis le dashboard Convai — URGENT.**
-La personnalite de l'agent, ses questions, ses regles de decision et
-l'enchainement des sections narratives **ne sont pas dans le depot** : ils
-vivent sur les serveurs Convai, sous le Character ID
-`080151a8-4885-11f1-a397-42010a7be02e`. Le jour ou l'abonnement s'arrete,
-cette matiere disparait. Le code se reecrit ; le contenu conversationnel
-affine au fil des sessions, non.
+Le graphe narratif est sauve, mais **le personnage ne l'est pas encore**.
+Restent a exporter depuis les autres onglets du dashboard
+(Character ID `080151a8-4885-11f1-a397-42010a7be02e`, compte
+`abo-frontieres`) :
 
-**2. Specs GPU / VRAM / RAM de la borne.**
-Determinent tout le dimensionnement : un GPU 24 Go et un GPU 8 Go
-n'admettent pas la meme architecture (taille du LLM, STT/TTS sur CPU ou
-GPU, second GPU eventuel).
+- **backstory / personnalite** de l'agent ;
+- **knowledge bank** eventuelle ;
+- **reglages de voix**, pour choisir une voix locale approchante.
+
+Tant que ce n'est pas fait, `sidecar/scenario/agent.yaml` porte une persona
+**deduite du ton des objectives**, pas la vraie.
 
 ## Structure du depot
 

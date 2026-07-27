@@ -43,17 +43,19 @@ class ClientLLM:
         self.top_p = config.get("top_p", 0.9)
         self.max_tokens = config.get("max_tokens", 200)
 
-        self._grammaire = None
-        chemin_grammaire = config.get("grammaire")
-        if chemin_grammaire:
-            fichier = racine / chemin_grammaire
-            if fichier.exists():
-                # On retire les commentaires : llama.cpp ne les accepte pas.
-                brut = fichier.read_text(encoding="utf-8")
-                self._grammaire = "\n".join(
-                    ligne for ligne in brut.splitlines()
-                    if not ligne.lstrip().startswith("#")
-                ).strip()
+        # Deux grammaires : l'entretien interdit grammaticalement le verdict,
+        # le verdict l'autorise. La bascule est pilotee par pipeline.py.
+        self._grammaires: dict[str, str] = {}
+        for nom, chemin in (config.get("grammaires") or {}).items():
+            fichier = racine / chemin
+            if not fichier.exists():
+                raise FileNotFoundError(f"Grammaire introuvable : {fichier}")
+            # On retire les commentaires : llama.cpp ne les accepte pas.
+            brut = fichier.read_text(encoding="utf-8")
+            self._grammaires[nom] = "\n".join(
+                ligne for ligne in brut.splitlines()
+                if not ligne.lstrip().startswith("#")
+            ).strip()
 
         self._client = httpx.AsyncClient(timeout=httpx.Timeout(60.0, connect=5.0))
 
@@ -65,8 +67,13 @@ class ClientLLM:
         except (httpx.HTTPError, OSError):
             return False
 
-    async def phrases(self, prompt: str) -> AsyncIterator[tuple[str, Replique | None]]:
+    async def phrases(
+        self, prompt: str, grammaire: str = "entretien"
+    ) -> AsyncIterator[tuple[str, Replique | None]]:
         """Emet chaque phrase des qu'elle est complete.
+
+        `grammaire` selectionne le jeu de verdicts autorises : "entretien"
+        interdit toute cloture, "verdict" la permet.
 
         Produit des tuples (phrase, None) au fil de l'eau, puis un dernier
         ("", Replique) portant le texte complet et les tags extraits.
@@ -79,8 +86,8 @@ class ClientLLM:
             "stream": True,
             "cache_prompt": True,  # reutilise le prefixe systeme entre les tours
         }
-        if self._grammaire:
-            charge["grammar"] = self._grammaire
+        if (g := self._grammaires.get(grammaire)) is not None:
+            charge["grammar"] = g
 
         complet = ""      # tout ce que le modele a produit, tags compris
         tampon = ""       # texte parle en attente d'une fin de phrase
