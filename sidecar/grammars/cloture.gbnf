@@ -8,10 +8,11 @@
 
 root ::= replique emotion verdict
 
-# Interdit aussi "<" : sans cela, Qwen laisse fuir ses jetons speciaux
-# (<tool_call>, <|im_end|>) dans le texte destine au TTS.
-replique ::= [^\[<]+
+# Au plus deux phrases — voir entretien.gbnf pour le detail.
+replique ::= phrase (" " phrase)?
 
-emotion ::= "[EMOTION:" ("Neutral" | "Concerned" | "Angry" | "Happy" | "Stare") "]"
+phrase ::= [^\[<.!?\n]{1,110} [.!?]
+
+emotion ::= "[EMOTION:" ("Stare" | "Concerned" | "Angry" | "Neutral" | "Happy") "]"
 
 verdict ::= "[VERDICT:" ("ACCEPTE" | "REFUSE") "]"

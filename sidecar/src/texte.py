@@ -33,6 +33,16 @@ _PUCE = re.compile(r"^\s*[-*+]\s+", re.MULTILINE)
 _EMOJI = re.compile(
     "[\U0001F000-\U0001FAFF\U00002600-\U000027BF\U0001F1E6-\U0001F1FF️]+"
 )
+
+# Filet de securite : le modele glisse parfois le nom de l'emotion en tete
+# de replique ("Concerned." ou "Stare : Papiers."). Ce sont des etiquettes
+# de controle, pas des paroles — le TTS les prononcerait en anglais.
+# Le \b est indispensable : sans lui, "Neutralite exigee" devenait
+# "ite exigee".
+_ETIQUETTE_EMOTION = re.compile(
+    r"^\s*(Stare|Concerned|Angry|Neutral|Happy)\b\s*[:.\-–]?\s*",
+    re.IGNORECASE,
+)
 _ESPACES = re.compile(r"[ \t]{2,}")
 _SAUTS = re.compile(r"\n{2,}")
 
@@ -76,6 +86,7 @@ def nettoyer_pour_tts(texte: str) -> str:
     t = _POINT_MEDIAN.sub("", t)
 
     t = _EMOJI.sub("", t)
+    t = _ETIQUETTE_EMOTION.sub("", t)
 
     # Guillemets francais avant la table : ils emportent leurs espaces.
     t = _GUILLEMET_OUVRANT.sub('"', t)

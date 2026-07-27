@@ -80,25 +80,65 @@ la mesure qui tranche, pas l'intuition.**
 ## Structure
 
 ```
+main.py                  point d'entree — serveur WebSocket
 config.yaml              tous les reglages (plus rien en dur)
 grammars/
-  entretien.gbnf         verdict INTERDIT      (< 5 questions)
-  verdict.gbnf           verdict autorise
-  cloture.gbnf           verdict OBLIGATOIRE   (>= 10 questions)
+  entretien.gbnf         1 phrase, verdict INTERDIT   (< 5 questions)
+  verdict.gbnf           2 phrases, verdict autorise
+  cloture.gbnf           2 phrases, verdict OBLIGATOIRE (>= 10 questions)
 scenario/agent.yaml      scenario transcrit du Narrative Design
 src/
+  serveur.py             WebSocket — contrat d'evenements vers Unreal
   machine_etats.py       phases et bascule de grammaire — sans dep. lourde
-  metrics.py             chronometrage par etage
-  stt.py                 faster-whisper (CPU)
-  llm.py                 client streaming vers llama.cpp server
-  tts.py                 Piper (CPU)
   pipeline.py            orchestration entrelacee
+  stt.py                 faster-whisper (GPU)
+  llm.py                 client streaming vers llama.cpp server
+  tts.py                 Piper (CPU) + frise de visemes MHF_*
+  texte.py               nettoyage avant TTS
+  metrics.py             chronometrage par etage
 bench/
-  bench_pipeline.py      chronometre (demande les modeles)
-  test_machine_etats.py  17 verifications, sans modele
-  test_decoupage.py      5 cas, sans modele
-scripts/setup.ps1, lancer_llm.ps1
+  bench_pipeline.py      chronometre           (demande les modeles)
+  client_test.py         simule Unreal, session complete
+  generer_echantillons.py
+  test_machine_etats.py  17 verifications      (sans modele)
+  test_decoupage.py       5 cas                (sans modele)
+  test_texte.py          14 cas                (sans modele)
+scripts/setup.ps1, lancer_llm.ps1, telecharger.sh
 ```
+
+## Lancer la borne
+
+Trois processus, volontairement separes — si l'un tombe, les autres
+survivent :
+
+```powershell
+.\scripts\lancer_llm.ps1 -Modele qwen2.5-3b-instruct-q4_k_m.gguf   # 1
+.venv\Scripts\python.exe main.py                                    # 2
+# 3 = Unreal, ou pour tester sans lui :
+.venv\Scripts\python.exe -m bench.client_test
+```
+
+## Trois lecons de la mise au point
+
+Elles ont chacune coute une regression, et valent d'etre retenues.
+
+**1. Ne decrivez PAS le format de sortie dans le prompt quand une grammaire
+le contraint deja.** Une version detaillait `[EMOTION:X][VERDICT:Y]` et la
+liste des emotions dans le bloc systeme. Le modele s'est mis a recracher ce
+vocabulaire en prose — *"Neutral Happy Concerned Angry X Verditt :Neutral"* —
+faute de pouvoir ecrire les vrais crochets, que la grammaire lui interdit.
+L'explication n'etait pas redondante : elle etait nuisible.
+
+**2. Interdire un caractere dans la grammaire peut supprimer le jeton
+d'arret.** Bannir `<` pour empecher les fuites de `<tool_call>` bloque du
+meme coup `<|im_end|>` : le modele ne peut plus s'interrompre seul et
+deroule tout le scenario en une replique, en jouant les deux roles. Il faut
+alors borner explicitement la longueur — ce que fait `replique ::= phrase`.
+
+**3. Rien de variable dans le bloc systeme.** Le compteur de questions y
+figurait ; il invalidait le cache de prompt de llama.cpp a chaque tour.
+Le sortir vers le message utilisateur a fait passer la latence de
+**1064 ms a 611 ms**, sans rien changer d'autre.
 
 ## Le verdict, rendu deterministe
 

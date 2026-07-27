@@ -9,9 +9,26 @@
 
 root ::= replique emotion verdict
 
-# Interdit aussi "<" : sans cela, Qwen laisse fuir ses jetons speciaux
+# UNE SEULE phrase pendant l'interrogatoire.
+#
+# C'est la traduction litterale de la regle du Narrative Design : "Ask ONE
+# question at a time." Elle cesse d'etre une consigne pour devenir une
+# impossibilite.
+#
+# Sans borne du tout, le modele deroulait le scenario entier en une
+# replique -- il jouait les deux roles : "Objets a declarer ? Aucun.
+# Moyens de paiement ? Pas de questions. Bon sejour." La cause tient a
+# l'interdiction de "<" ci-dessous : elle bloque aussi son jeton d'arret
+# <|im_end|>, si bien qu'il ne peut plus s'interrompre de lui-meme.
+#
+# Avec deux phrases autorisees, il comblait la seconde par du remplissage
+# ("Sensible."). Une seule suffit a poser une question.
+replique ::= phrase
+
+# "<" est exclu : sans cela, Qwen laisse fuir ses jetons speciaux
 # (<tool_call>, <|im_end|>) dans le texte destine au TTS.
-replique ::= [^\[<]+
+# Le saut de ligne l'est aussi : une replique parlee tient sur une ligne.
+phrase ::= [^\[<.!?\n]{1,110} [.!?]
 
 # Neutral est RETIRE pendant l'interrogatoire.
 #

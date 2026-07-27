@@ -70,23 +70,28 @@ class Pipeline:
     # -- Construction du prompt -----------------------------------------
 
     def _systeme(self) -> str:
-        """Bloc systeme — STRICTEMENT statique.
+        """Bloc systeme — STRICTEMENT statique, et SANS description du format.
 
-        Rien de variable ici : llama.cpp met en cache le prefixe commun
-        (`cache_prompt`), et la moindre variation par tour ferait tout
-        recalculer. Le compteur de questions vit donc cote utilisateur.
+        Deux regles apprises a la mesure :
+
+        1. Rien de variable ici. llama.cpp met en cache le prefixe commun
+           (`cache_prompt`) ; la moindre variation par tour ferait tout
+           recalculer. Le compteur de questions vit donc cote utilisateur.
+           (Gain constate en le sortant d'ici : 1064 -> 611 ms.)
+
+        2. **Aucune mention des tags.** Une version anterieure detaillait
+           ici "[EMOTION:X][VERDICT:Y]" et la liste des emotions. Resultat :
+           le modele recrachait ce vocabulaire en prose —
+           "Neutral Happy Concerned Angry X Verditt :Neutral..." — puisque
+           la grammaire lui interdit d'ecrire les vrais crochets.
+           Avec du decodage contraint, decrire le format n'est pas
+           redondant : c'est nuisible. La grammaire suffit.
         """
         s = self.scenario
         return "\n\n".join([
             s["persona"].strip(),
             s["intro"].strip(),
             s["interrogatoire"]["objectif"].strip(),
-            "Termine TOUJOURS par deux tags colles, dans cet ordre exact :\n"
-            "[EMOTION:X][VERDICT:Y]\n"
-            "X vaut Stare quand tu jauges, Concerned si la reponse est vague,\n"
-            "Angry face a l'insolence, Neutral pour un pur enregistrement,\n"
-            "Happy tres rarement. Ne reste pas bloque sur Neutral.\n"
-            "Ces mots n'apparaissent QUE dans le tag, jamais dans tes paroles.",
         ])
 
     def _etat_courant(self) -> str:

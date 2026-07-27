@@ -27,7 +27,10 @@ stt:
 llm:
   # llama.cpp server, lance separement — voir scripts/setup.ps1
   url: "http://127.0.0.1:8080"
-  modele: "qwen2.5-7b-instruct-q4_k_m.gguf"
+  # Sert d'etiquette dans le journal de mesures ; le modele reellement
+  # charge est celui passe a scripts/lancer_llm.ps1. Garder les deux
+  # accordes, sinon les releves de benchmarks/latence.jsonl mentent.
+  modele: "qwen2.5-3b-instruct-q4_k_m.gguf"
   temperature: 0.7
   top_p: 0.9
   max_tokens: 200

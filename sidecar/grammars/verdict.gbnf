@@ -1,13 +1,14 @@
 # Grammaire de la phase de verdict — a partir de la 5e question repondue.
 #
 # Le modele peut desormais clore l'entretien. Passe le plafond de
-# questions_max, le code force la bascule (voir pipeline.py).
+# questions_max, le code bascule sur cloture.gbnf (voir machine_etats.py).
 
 root ::= replique emotion verdict
 
-# Interdit aussi "<" : sans cela, Qwen laisse fuir ses jetons speciaux
-# (<tool_call>, <|im_end|>) dans le texte destine au TTS.
-replique ::= [^\[<]+
+# Au plus deux phrases — voir entretien.gbnf pour le detail.
+replique ::= phrase (" " phrase)?
+
+phrase ::= [^\[<.!?\n]{1,110} [.!?]
 
 # Neutral et Happy reapparaissent ici : la section "accepte" demande une
 # cloture "froide, breve, administrative", ce que Neutral traduit bien.

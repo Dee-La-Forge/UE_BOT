@@ -54,6 +54,18 @@ CAS = [
      "Vraiment ? Bien sur !",
      "Vraiment ? Bien sur !"),
 
+    ("cas reel du bench : etiquette d'emotion en tete",
+     "Concerned. Motif du sejour ?",
+     "Motif du sejour ?"),
+
+    ("etiquette avec deux-points",
+     "Stare : Papiers.",
+     "Papiers."),
+
+    ("mot legitime en tete : ne pas amputer",
+     "Neutralite exigee.",
+     "Neutralite exigee."),
+
     ("texte deja propre : inchange",
      "Papiers. Presentez vos documents.",
      "Papiers. Presentez vos documents."),

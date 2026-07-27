@@ -1,0 +1,196 @@
+"""Serveur WebSocket — le pont vers Unreal.
+
+Implemente le contrat decrit dans docs/CONTRAT-EVENEMENTS.md.
+
+Principe : **le sidecar ignore tout de la scenographie.** Il ne sait pas ce
+qu'est un glitch, un tampon ou un panneau de sortie. Il emet des faits ;
+Unreal decide de la mise en scene. On peut ainsi retoucher les effets sans
+toucher a l'IA, et changer de LLM sans rouvrir un Blueprint.
+
+Les trames audio passent en binaire, precedees du JSON qui les decrit :
+l'encodage base64 couterait ~33 % de volume sur un chemin ou chaque
+milliseconde compte.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import json
+import logging
+from pathlib import Path
+
+import numpy as np
+import websockets
+from websockets.asyncio.server import ServerConnection, serve
+
+from .metrics import Mesure
+from .pipeline import MorceauAudio, Pipeline
+
+_log = logging.getLogger("sidecar.serveur")
+
+TAUX_VISITEUR = 16000   # ce qu'attend Whisper
+
+
+class Serveur:
+    def __init__(self, config: dict, racine: Path):
+        self.config = config
+        self.racine = racine
+        self.pipeline = Pipeline(config, racine)
+
+        self._repli = self.pipeline.scenario["repli"]
+        self._avatar = self.pipeline.scenario.get("metahuman", "BP_AgentGermain")
+        self._journal = racine / config["mesures"]["fichier_sortie"]
+        self._mesures_actives = bool(config["mesures"]["actif"])
+
+        # Un seul visiteur a la fois : la borne est mono-poste.
+        self._occupe = asyncio.Lock()
+
+    # -- Emission ---------------------------------------------------------
+
+    @staticmethod
+    async def _envoyer(ws: ServerConnection, evenement: str, **charge) -> None:
+        await ws.send(json.dumps({"evenement": evenement, **charge}))
+
+    async def _envoyer_audio(self, ws: ServerConnection, m: MorceauAudio, seq: int) -> None:
+        """JSON descriptif, puis la trame binaire qu'il annonce."""
+        await self._envoyer(
+            ws, "parole.audio",
+            seq=seq, taux=m.taux, texte=m.texte, premier=m.premier,
+            # Frise de visemes pour le mode degrade, quand NeuroSync est absent.
+            visemes=[{"pose": p, "debut": round(d, 4), "fin": round(f, 4)}
+                     for p, d, f in m.visemes],
+        )
+        await ws.send(self.pipeline.tts.en_pcm16(m.pcm))
+
+    async def _replique_de_repli(self, ws: ServerConnection, cle: str) -> None:
+        """Fait parler l'agent malgre une panne, plutot que de le laisser muet."""
+        texte = self._repli.get(cle, self._repli.get("indisponible", ""))
+        if not texte:
+            return
+        try:
+            parole = self.pipeline.tts.synthetiser(texte)
+            await self._envoyer(ws, "parole.debut", texte=texte, emotion="Neutral")
+            await self._envoyer_audio(
+                ws,
+                MorceauAudio(pcm=parole.pcm, taux=parole.taux, texte=texte,
+                             premier=True, visemes=parole.visemes),
+                seq=0,
+            )
+            await self._envoyer(ws, "parole.fin")
+        except Exception:
+            # Le TTS lui-meme est tombe : on previent, Unreal affichera
+            # son propre repli. Une borne muette reste preferable a une
+            # borne gelee.
+            _log.exception("repli TTS indisponible")
+            await self._envoyer(ws, "erreur", code="tts_indisponible", repli=texte)
+
+    # -- Tour de parole ---------------------------------------------------
+
+    async def _traiter_audio(self, ws: ServerConnection, brut: bytes) -> None:
+        audio = np.frombuffer(brut, dtype=np.int16).astype(np.float32) / 32768.0
+        if audio.size == 0:
+            return
+
+        mesure = Mesure()
+        seq = 0
+        a_parle = False
+
+        try:
+            async for element in self.pipeline.tour_de_parole(
+                audio, TAUX_VISITEUR, mesure
+            ):
+                if isinstance(element, MorceauAudio):
+                    if not a_parle:
+                        await self._envoyer(ws, "parole.debut", texte=element.texte,
+                                            emotion=self._emotion_pressentie())
+                        a_parle = True
+                    await self._envoyer_audio(ws, element, seq)
+                    seq += 1
+                else:
+                    if a_parle:
+                        await self._envoyer(ws, "parole.fin")
+                    await self._conclure(ws, element)
+
+        except Exception:
+            _log.exception("echec du tour de parole")
+            await self._replique_de_repli(ws, "incompris")
+            return
+
+        if self._mesures_actives and mesure.temps_premier_son is not None:
+            mesure.ecrire(self._journal, contexte={
+                "modele_llm": self.config["llm"]["modele"],
+                "questions": self.pipeline.etat.nb_questions,
+            })
+
+    def _emotion_pressentie(self) -> str:
+        """Emotion annoncee a l'ouverture de la replique.
+
+        Le tag reel n'arrive qu'en fin de generation, or Unreal a besoin de
+        poser le visage AVANT le premier son. On envoie donc le defaut du
+        personnage, corrige ensuite si le tag differe.
+        """
+        return "Stare"
+
+    async def _conclure(self, ws: ServerConnection, replique) -> None:
+        """Emet l'emotion definitive, puis le verdict s'il y en a un."""
+        await self._envoyer(ws, "emotion", valeur=replique.emotion)
+
+        if replique.verdict in ("ACCEPTE", "REFUSE"):
+            await self._envoyer(ws, "verdict", decision=replique.verdict)
+            await self._envoyer(ws, "session.terminee")
+
+    # -- Boucle de connexion ----------------------------------------------
+
+    async def _connexion(self, ws: ServerConnection) -> None:
+        _log.info("Unreal connecte")
+        try:
+            async for message in ws:
+                if isinstance(message, bytes):
+                    await self._traiter_audio(ws, message)
+                    continue
+
+                try:
+                    recu = json.loads(message)
+                except json.JSONDecodeError:
+                    _log.warning("message illisible : %.80s", message)
+                    continue
+
+                await self._router(ws, recu.get("evenement", ""))
+
+        except websockets.ConnectionClosed:
+            _log.info("Unreal deconnecte")
+
+    async def _router(self, ws: ServerConnection, evenement: str) -> None:
+        if evenement == "presence.detectee":
+            if self._occupe.locked():
+                _log.warning("presence signalee alors qu'une session court deja")
+                return
+            await self._occupe.acquire()
+            self.pipeline.reinitialiser()
+            await self._envoyer(ws, "session.demarree", avatar=self._avatar)
+            _log.info("session demarree")
+
+        elif evenement in ("presence.perdue", "session.reset"):
+            self.pipeline.reinitialiser()
+            if self._occupe.locked():
+                self._occupe.release()
+            _log.info("session reinitialisee (%s)", evenement)
+
+        else:
+            _log.warning("evenement inconnu : %s", evenement)
+
+    # -- Cycle de vie -----------------------------------------------------
+
+    async def demarrer(self) -> None:
+        hote = self.config["serveur"]["hote"]
+        port = self.config["serveur"]["port"]
+
+        if not await self.pipeline.llm.disponible():
+            _log.warning(
+                "llama.cpp injoignable sur %s — la borne demarre en mode degrade",
+                self.pipeline.llm.url,
+            )
+
+        async with serve(self._connexion, hote, port, max_size=None):
+            _log.info("sidecar a l'ecoute sur ws://%s:%d", hote, port)
+            await asyncio.Future()   # tourne jusqu'a interruption
