@@ -80,16 +80,23 @@ la mesure qui tranche, pas l'intuition.**
 ## Structure
 
 ```
-config.yaml            tous les reglages (plus rien en dur)
-grammars/reponse.gbnf  contraint le format de sortie du LLM
-scenario/agent.yaml    persona et questions  ⚠️ PLACEHOLDER
+config.yaml              tous les reglages (plus rien en dur)
+grammars/
+  entretien.gbnf         verdict INTERDIT      (< 5 questions)
+  verdict.gbnf           verdict autorise
+  cloture.gbnf           verdict OBLIGATOIRE   (>= 10 questions)
+scenario/agent.yaml      scenario transcrit du Narrative Design
 src/
-  metrics.py           chronometrage par etage
-  stt.py               faster-whisper (CPU)
-  llm.py               client streaming vers llama.cpp server
-  tts.py               Piper (CPU)
-  pipeline.py          orchestration entrelacee
-bench/bench_pipeline.py
+  machine_etats.py       phases et bascule de grammaire — sans dep. lourde
+  metrics.py             chronometrage par etage
+  stt.py                 faster-whisper (CPU)
+  llm.py                 client streaming vers llama.cpp server
+  tts.py                 Piper (CPU)
+  pipeline.py            orchestration entrelacee
+bench/
+  bench_pipeline.py      chronometre (demande les modeles)
+  test_machine_etats.py  17 verifications, sans modele
+  test_decoupage.py      5 cas, sans modele
 scripts/setup.ps1, lancer_llm.ps1
 ```
 
