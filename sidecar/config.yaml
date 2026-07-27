@@ -8,10 +8,18 @@ serveur:
   port: 8765          # WebSocket expose a Unreal
 
 stt:
-  # faster-whisper, sur CPU (les 64 Go de RAM sont sous-employes)
+  # faster-whisper sur GPU.
+  #
+  # Le CPU etait le choix initial, pour menager une VRAM qu'on croyait
+  # comptee. La mesure a tranche : 1932 ms sur CPU contre 301 ms sur GPU
+  # pour le meme modele, soit 6,4x. Le STT etait 90 % de la latence totale.
+  #
+  #   small / cuda / float16 :  301 ms   <- retenu
+  #   base  / cuda / float16 :  100 ms   (transcription degradee)
+  #   small / cpu  / int8    : 1932 ms
   modele: "small"     # tiny | base | small | medium | large-v3
-  peripherique: "cpu"
-  type_calcul: "int8"
+  peripherique: "cuda"
+  type_calcul: "float16"
   langue: "fr"
   # Le VAD amont (SileroVAD cote Unreal) fournit deja des segments propres.
   vad_filtre: true

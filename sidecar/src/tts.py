@@ -43,6 +43,12 @@ PHONEME_VERS_VISEME: dict[str, str] = {
 
 VISEME_REPOS = "MHF_None"
 
+# Symboles qui ne sont pas des sons : marques de frontiere (^ $), accents
+# toniques (ˈ ˌ), longueur (ː), et diacritiques combinants — dont le tilde
+# de nasalisation, qui suit sa voyelle au lieu de la remplacer.
+# Ils PROLONGENT le viseme precedent au lieu de rouvrir la bouche au repos.
+PHONEMES_TRANSPARENTS = frozenset("^$ˈˌːˑ̥̬̪̯̃͡ ")
+
 
 @dataclass
 class Parole:
@@ -64,7 +70,14 @@ class Synthetiseur:
                 f"Voix Piper introuvable : {modele}\n"
                 f"Lancer scripts/telecharger.sh pour recuperer les modeles."
             )
-        self._voix = PiperVoice.load(str(modele))
+        # Les alignements ne servent qu'au lipsync de repli. Les activer
+        # patche le modele ONNX en memoire au chargement (necessite le paquet
+        # `onnx`) : le cout est paye une fois au demarrage, pas a chaque
+        # phrase. Sans ce drapeau ici, `synthesize(include_alignments=True)`
+        # reste sans effet — le patch se decide au load, pas a l'appel.
+        self._alignements = bool(config.get("phonemes_pour_repli", True))
+
+        self._voix = PiperVoice.load(str(modele), include_alignments=self._alignements)
         self.taux = self._voix.config.sample_rate
 
         vitesse = config.get("vitesse", 1.0)
@@ -73,9 +86,6 @@ class Synthetiseur:
             length_scale=(1.0 / vitesse) if vitesse and vitesse != 1.0 else None,
             volume=config.get("volume", 1.0),
         )
-        # Les alignements ne servent qu'au lipsync de repli : inutile de les
-        # calculer quand NeuroSync est aux commandes.
-        self._alignements = bool(config.get("phonemes_pour_repli", True))
 
     def synthetiser(self, texte: str) -> Parole:
         """Synthetise une phrase et rend l'audio plus les visemes."""
@@ -101,23 +111,35 @@ class Synthetiseur:
     def _visemes(morceaux) -> list[tuple[str, float, float]]:
         """Convertit les alignements de phonemes en suite de poses MHF_*.
 
-        Les poses identiques consecutives sont fusionnees : inutile de
-        redeclencher la meme forme de bouche sur deux phonemes voisins.
+        Piper fournit une DUREE par phoneme (`num_samples`), pas un
+        horodatage : la frise se construit par cumul.
+
+        Deux regles de lissage :
+        - les symboles non sonores prolongent la pose precedente ;
+        - les poses identiques consecutives fusionnent, pour ne pas
+          redeclencher la meme forme de bouche sur deux phonemes voisins.
         """
         suite: list[tuple[str, float, float]] = []
-        decalage = 0.0
+        curseur = 0.0   # position absolue dans la parole, en secondes
 
         for m in morceaux:
-            duree = len(m.audio_float_array) / m.sample_rate if m.sample_rate else 0.0
+            taux = m.sample_rate or 22050
             for al in (m.phoneme_alignments or []):
+                duree = al.num_samples / taux
+                debut, fin = curseur, curseur + duree
+                curseur = fin
+
+                if al.phoneme in PHONEMES_TRANSPARENTS:
+                    if suite:
+                        pose, d, _ = suite[-1]
+                        suite[-1] = (pose, d, fin)   # prolonge
+                    continue
+
                 pose = PHONEME_VERS_VISEME.get(al.phoneme, VISEME_REPOS)
-                debut = decalage + getattr(al, "start_sec", 0.0)
-                fin = decalage + getattr(al, "end_sec", 0.0)
                 if suite and suite[-1][0] == pose:
                     suite[-1] = (pose, suite[-1][1], fin)   # fusion
                 else:
                     suite.append((pose, debut, fin))
-            decalage += duree
 
         return suite
 

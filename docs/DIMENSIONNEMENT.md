@@ -89,34 +89,55 @@ livres a Unreal via **LiveLink** (deja active dans le projet).
 Mode degrade : mapping phonemes → les 25 poses `MHF_*` existantes, si
 NeuroSync est indisponible ou si le budget GPU se tend.
 
-## Budget de latence — estimation realiste
+## Budget de latence — MESURE le 27/07/2026
 
-Du moment ou le visiteur cesse de parler jusqu'au premier son de l'agent :
+Mesure reelle sur la borne, 5 tours, echantillon de 3,3 s
+(`bench/echantillons/motif.wav`), Qwen2.5-3B Q4_K_M + whisper small GPU +
+Piper CPU. Journal : `benchmarks/latence.jsonl`.
 
-| Etape | Estimation |
+| Etape | Mesure |
 |---|---|
-| Detection de fin de parole (VAD) | 200 – 300 ms |
-| STT (whisper small CPU, enonce ~3 s) | 300 – 500 ms |
-| LLM — 1re phrase (3B, streaming) | ~450 ms |
-| TTS — 1re phrase (Piper CPU) | 150 – 250 ms |
-| NeuroSync sur cette phrase | 100 – 200 ms |
-| **Total** | **≈ 1,2 – 1,8 s** |
+| STT (whisper small, **GPU**) | ~330 ms |
+| LLM — 1er token (3B, streaming) | ~210 ms |
+| TTS — 1re phrase (Piper CPU) | ~150 ms |
+| **PREMIER SON** | **694 ms median** (min 528, max 869, σ 125) |
 
-> **Correction d'une estimation anterieure.** J'avais avance 600 ms – 1,2 s
-> avant d'integrer NeuroSync : cette etape s'ajoute en serie, puisque les
-> blendshapes se calculent a partir de l'audio TTS. La cible realiste est
-> **1,2 – 1,8 s**, contre vraisemblablement 2,5 – 4 s aujourd'hui avec
-> Convai. Le gain reste net — et surtout **deterministe**, sans jitter
-> reseau.
+**Contre ~2500 – 4000 ms estimes pour la chaine Convai : gain de 3,6× a
+5,8×.** Et surtout un ecart-type de 125 ms — sans jitter reseau, la borne
+devient previsible.
 
-### Leviers d'optimisation, par ordre de rendement
+> ⚠️ **Ce chiffre n'inclut pas encore NeuroSync**, qui s'ajoutera en serie
+> (les blendshapes se calculent a partir de l'audio TTS). Prevoir
+> **+100 a 200 ms**, soit un total attendu autour de **800 – 900 ms**.
+> Le VAD amont (SileroVAD cote Unreal) ajoutera son propre seuil de silence.
 
-1. Abaisser le seuil de silence du VAD (gain direct, 100–150 ms).
-2. Contraindre le LLM a ouvrir par une **phrase courte** — c'est elle qui
+### La mesure a invalide une decision d'architecture
+
+Le STT devait tourner sur CPU, pour menager une VRAM qu'on croyait comptee.
+Mesure a l'appui :
+
+| Configuration | Latence | Transcription |
+|---|---|---|
+| small / **cuda** / float16 | **301 ms** | correcte |
+| base / cuda / float16 | 100 ms | degradee (« miosier » pour « musee ») |
+| small / cpu / int8 | 1932 ms | correcte |
+
+Sur CPU, le STT representait **90 % de la latence totale** (2045 ms sur
+2276 ms). Le basculer sur GPU a divise le total par 3,3. L'estimation
+initiale annoncait 300–500 ms pour le CPU : elle etait **fausse d'un
+facteur 4**.
+
+C'est exactement ce pour quoi on mesure avant de construire.
+
+### Leviers restants, par ordre de rendement
+
+1. **NeuroSync en pipeline, pas en serie** : lancer l'inference du chunk N
+   pendant la lecture du chunk N−1, pour absorber ses 100–200 ms.
+2. Abaisser le seuil de silence du VAD (100–150 ms).
+3. Contraindre le LLM a ouvrir par une **phrase courte** — c'est elle qui
    declenche l'audio, la suite se genere pendant la lecture.
-3. Lancer NeuroSync sur le chunk N pendant la lecture du chunk N−1
-   (pipeline, pas serie).
-4. Transcription speculative sur transcript partiel.
+4. Le LLM 7B reste abordable : +150 ms environ sur le 1er token, pour une
+   meilleure tenue du personnage. A arbitrer apres essai qualitatif.
 
 ## ⚠️ Risque thermique — a valider tot
 
