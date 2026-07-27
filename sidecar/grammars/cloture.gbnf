@@ -8,7 +8,9 @@
 
 root ::= replique emotion verdict
 
-replique ::= [^\[]+
+# Interdit aussi "<" : sans cela, Qwen laisse fuir ses jetons speciaux
+# (<tool_call>, <|im_end|>) dans le texte destine au TTS.
+replique ::= [^\[<]+
 
 emotion ::= "[EMOTION:" ("Neutral" | "Concerned" | "Angry" | "Happy" | "Stare") "]"
 

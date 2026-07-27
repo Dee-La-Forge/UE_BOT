@@ -9,8 +9,17 @@
 
 root ::= replique emotion verdict
 
-replique ::= [^\[]+
+# Interdit aussi "<" : sans cela, Qwen laisse fuir ses jetons speciaux
+# (<tool_call>, <|im_end|>) dans le texte destine au TTS.
+replique ::= [^\[<]+
 
-emotion ::= "[EMOTION:" ("Neutral" | "Concerned" | "Angry" | "Happy" | "Stare") "]"
+# Neutral est RETIRE pendant l'interrogatoire.
+#
+# A la mesure, le modele repondait "Neutral" a chaque tour malgre la
+# consigne : les 16 poses de Motions2/Face/ seraient restees inutilisees et
+# l'agent aurait presente un mur inexpressif. Or la persona le decrit comme
+# froid et jaugeant — son defaut naturel est Stare, pas l'absence
+# d'expression. On retire donc l'option, plutot que de la deconseiller.
+emotion ::= "[EMOTION:" ("Stare" | "Concerned" | "Angry") "]"
 
 verdict ::= "[VERDICT:EN_COURS]"

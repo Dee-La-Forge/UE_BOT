@@ -26,6 +26,7 @@ from .llm import ClientLLM, Replique
 from .machine_etats import Phase, SessionEtat
 from .metrics import Mesure
 from .stt import Transcripteur
+from .texte import nettoyer_pour_tts
 from .tts import Synthetiseur
 
 
@@ -68,52 +69,62 @@ class Pipeline:
 
     # -- Construction du prompt -----------------------------------------
 
-    def _consignes(self) -> str:
-        """Assemble les consignes selon la phase courante."""
+    def _systeme(self) -> str:
+        """Bloc systeme — STRICTEMENT statique.
+
+        Rien de variable ici : llama.cpp met en cache le prefixe commun
+        (`cache_prompt`), et la moindre variation par tour ferait tout
+        recalculer. Le compteur de questions vit donc cote utilisateur.
+        """
+        s = self.scenario
+        return "\n\n".join([
+            s["persona"].strip(),
+            s["intro"].strip(),
+            s["interrogatoire"]["objectif"].strip(),
+            "Termine TOUJOURS par deux tags colles, dans cet ordre exact :\n"
+            "[EMOTION:X][VERDICT:Y]\n"
+            "X vaut Stare quand tu jauges, Concerned si la reponse est vague,\n"
+            "Angry face a l'insolence, Neutral pour un pur enregistrement,\n"
+            "Happy tres rarement. Ne reste pas bloque sur Neutral.\n"
+            "Ces mots n'apparaissent QUE dans le tag, jamais dans tes paroles.",
+        ])
+
+    def _etat_courant(self) -> str:
+        """Rappel de l'avancement — cote utilisateur, car il change a chaque tour."""
         s = self.scenario
         e = self.etat
+
         if e.phase is Phase.INTRO:
-            return s["intro"].strip()
-
-        objectif = s["interrogatoire"]["objectif"].strip()
-        restant = e.questions_max - e.nb_questions
-
+            return "[Debut du controle. Interpelle le visiteur.]"
         if e.nb_questions < e.questions_min:
             manquantes = e.questions_min - e.nb_questions
             return (
-                f"{objectif}\n\n"
-                f"Questions posees : {e.nb_questions}. "
-                f"Il en reste au minimum {manquantes} avant tout verdict."
+                f"[{e.nb_questions} question(s) posee(s). "
+                f"Encore {manquantes} au minimum avant tout verdict.]"
             )
         if e.nb_questions >= e.questions_max:
             return (
-                f"{objectif}\n\n"
-                f"Tu as pose {e.nb_questions} questions. "
-                f"Tu dois MAINTENANT rendre ton verdict.\n\n"
-                f"Si tu accordes l'acces :\n{s['verdicts']['accepte']['objectif'].strip()}\n\n"
-                f"Si tu refuses l'acces :\n{s['verdicts']['refus']['objectif'].strip()}"
+                f"[{e.nb_questions} questions posees. Rends ton verdict MAINTENANT.\n"
+                f"Si tu accordes : {s['verdicts']['accepte']['objectif'].strip()}\n"
+                f"Si tu refuses : {s['verdicts']['refus']['objectif'].strip()}]"
             )
+        restant = e.questions_max - e.nb_questions
         return (
-            f"{objectif}\n\n"
-            f"Questions posees : {e.nb_questions}. "
-            f"Tu peux poursuivre ({restant} au maximum) ou rendre ton verdict."
+            f"[{e.nb_questions} questions posees. Tu peux poursuivre "
+            f"({restant} au maximum) ou rendre ton verdict.]"
         )
 
     def _construire_prompt(self, entree_visiteur: str) -> str:
         """Assemble le prompt au format ChatML (Qwen)."""
         parties = [
-            "<|im_start|>system\n",
-            self.scenario["persona"].strip(),
-            "\n\n",
-            self._consignes(),
-            "\n\nTermine TOUJOURS ta reponse par les deux tags, dans cet ordre :",
-            "\n[EMOTION:...][VERDICT:...]",
-            "\n<|im_end|>\n",
+            "<|im_start|>system\n", self._systeme(), "<|im_end|>\n",
         ]
         for visiteur, agent in self.historique:
             parties.append(f"<|im_start|>user\n{visiteur}<|im_end|>\n")
             parties.append(f"<|im_start|>assistant\n{agent}<|im_end|>\n")
-        parties.append(f"<|im_start|>user\n{entree_visiteur}<|im_end|>\n")
+        parties.append(
+            f"<|im_start|>user\n{entree_visiteur}\n{self._etat_courant()}<|im_end|>\n"
+        )
         parties.append("<|im_start|>assistant\n")
         return "".join(parties)
 
@@ -160,7 +171,13 @@ class Pipeline:
                 m.marquer("llm_premier_token")
                 m.marquer("llm_premiere_phrase")
 
-            parole = self.tts.synthetiser(phrase)
+            # Filtre deterministe : un 3B produit de l'ecriture inclusive et
+            # du markdown malgre la consigne, et le TTS les prononce.
+            prononcable = nettoyer_pour_tts(phrase)
+            if not prononcable:
+                continue
+
+            parole = self.tts.synthetiser(prononcable)
 
             if premier:
                 m.marquer("tts_premier_chunk")
@@ -169,7 +186,7 @@ class Pipeline:
             yield MorceauAudio(
                 pcm=parole.pcm,
                 taux=parole.taux,
-                texte=phrase,
+                texte=prononcable,
                 premier=premier,
                 visemes=parole.visemes,
             )

@@ -5,8 +5,12 @@
 
 root ::= replique emotion verdict
 
-replique ::= [^\[]+
+# Interdit aussi "<" : sans cela, Qwen laisse fuir ses jetons speciaux
+# (<tool_call>, <|im_end|>) dans le texte destine au TTS.
+replique ::= [^\[<]+
 
-emotion ::= "[EMOTION:" ("Neutral" | "Concerned" | "Angry" | "Happy" | "Stare") "]"
+# Neutral et Happy reapparaissent ici : la section "accepte" demande une
+# cloture "froide, breve, administrative", ce que Neutral traduit bien.
+emotion ::= "[EMOTION:" ("Stare" | "Concerned" | "Angry" | "Neutral" | "Happy") "]"
 
 verdict ::= "[VERDICT:" ("EN_COURS" | "ACCEPTE" | "REFUSE") "]"
