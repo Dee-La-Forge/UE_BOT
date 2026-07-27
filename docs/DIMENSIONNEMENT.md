@@ -1,31 +1,46 @@
 # Dimensionnement — borne cible
 
-## Materiel
+## Materiel — releve sur la machine (verifie via `nvidia-smi`)
 
 | | |
 |---|---|
-| GPU | **RTX 4090 Laptop — 16 Go VRAM** |
+| GPU | **NVIDIA GeForce RTX 3090 Ti — 24 Go VRAM** (pilote 596.36) |
 | RAM | 64 Go |
 | Stockage | 500 Go SSD |
+| Python | 3.13 / 3.12 / 3.10 dispo — **cible 3.12** |
+| Outillage | CMake present · **ffmpeg absent** |
 
-> Il s'agit de la variante **mobile** (AD103, 16 Go), pas de la 4090 desktop
-> (24 Go). Le budget VRAM et le comportement thermique en decoulent.
+> Cette machine **est** la borne de production (confirme).
+> Une estimation initiale evoquait une RTX 4090 Laptop 16 Go : le releve
+> materiel donne une **3090 Ti 24 Go desktop**. Tout ce document est calibre
+> sur le materiel reellement detecte.
 
-## Budget VRAM — le poste contraint
+## Budget VRAM — confortable
 
-Les 16 Go sont partages entre le rendu et l'inference. Repartition cible :
+24 Go partages entre rendu et inference :
 
 | Poste | Budget | Note |
 |---|---|---|
 | Unreal + MetaHuman + Lumen SW + VSM | **5 – 6 Go** | scene fixe, 1 personnage |
 | NeuroSync (inference continue) | **~1 Go** | petit transformer seq2seq |
-| LLM quantifie | **4 – 6 Go** | voir arbitrage ci-dessous |
-| Marge de securite | **1,5 Go** | jamais saturer : pics d'allocation = hitch ou OOM |
-| **Total** | **~13,5 / 16 Go** | |
+| LLM quantifie 7B | **~5,5 Go** | poids + KV cache |
+| Marge de securite | **2 Go** | jamais saturer : pics = hitch ou OOM |
+| **Total** | **~14,5 / 24 Go** | **~9 Go de reserve** |
 
-**Decision structurante : STT et TTS tournent sur CPU.** Avec 64 Go de RAM
-disponibles, cela libere ~1,5 Go de VRAM pour le LLM sans penalite de
-latence significative. C'est le meilleur echange possible sur cette machine.
+**La VRAM n'est plus le facteur limitant.** Ce que la reserve debloque :
+
+- un **LLM 7B** sans compromis (voire 14B quantifie si le personnage
+  l'exigeait) ;
+- **XTTS-v2 sur GPU** (~2 Go) au lieu de Piper CPU, si la qualite vocale de
+  Piper s'avere insuffisante — bien meilleure prosodie, clonage de voix ;
+- charger **deux LLM simultanement** pendant la phase de prototypage, pour
+  comparer 3B et 7B en A/B sur la meme session.
+
+**Decision maintenue : STT et TTS demarrent sur CPU.** Non plus par
+contrainte de VRAM, mais parce que les 64 Go de RAM sont sous-employes et
+que cela laisse le GPU entierement au rendu et a l'inference. On rapatriera
+le TTS sur GPU seulement si la mesure montre que Piper est le maillon
+faible.
 
 ## Choix des modeles
 
@@ -33,16 +48,17 @@ latence significative. C'est le meilleur echange possible sur cette machine.
 
 | Modele | VRAM (Q4_K_M) | 1er token | Verdict |
 |---|---|---|---|
-| **Qwen2.5-3B-Instruct** | ~2,0 Go | ~60 ms | ✅ **defaut recommande** |
-| Qwen2.5-7B-Instruct | ~4,7 Go + KV | ~110 ms | fallback qualite |
+| Qwen2.5-3B-Instruct | ~2,0 Go | ~60 ms | option latence |
+| **Qwen2.5-7B-Instruct** | ~5,5 Go | ~110 ms | ✅ **defaut** |
 
-**Recommandation : demarrer en 3B.** Le personnage n'a pas besoin de
-raisonnement profond — il a besoin d'une personnalite tenue et d'un verdict.
-La vitesse de generation **conditionne directement** le temps jusqu'au
+**Recommandation : demarrer en 7B**, puisque la VRAM ne contraint plus.
+Meilleure tenue du personnage sur la duree d'un entretien, meilleur respect
+des consignes de format.
+
+Mais la vitesse de generation **conditionne directement** le delai avant le
 premier son, puisqu'on streame phrase par phrase vers le TTS. Un 3B genere
-2 a 3× plus vite qu'un 7B.
-
-Passer au 7B seulement si le 3B tient mal le personnage sur la duree.
+2 a 3× plus vite. **Le bench charge donc les deux et les compare** — c'est
+la mesure qui tranche, pas l'intuition. Si le 3B tient le role, il gagne.
 
 **Verdict contraint par grammaire GBNF** : le modele est force de terminer
 par un jeton structure (`VERDICT: ACCEPTE` / `REFUSE`), plus un tag
@@ -104,18 +120,26 @@ Du moment ou le visiteur cesse de parler jusqu'au premier son de l'agent :
 
 ## ⚠️ Risque thermique — a valider tot
 
-C'est un **GPU mobile**, dans un dispositif tournant potentiellement 8 h/jour.
-On empile un rendu Lumen 60 fps et une inference GPU quasi continue pendant
+La 3090 Ti est une carte desktop a **450 W de TGP** — l'une des plus
+chaudes de sa generation. Le dispositif tourne potentiellement 8 h/jour, et
+on empile un rendu Lumen 60 fps et une inference GPU quasi continue pendant
 toute la parole de l'agent.
 
 Le projet d'origine capait deja `t.MaxFPS=60` avec la mention explicite
 « moins de chaleur/usure, anti-crash session longue » — le probleme etait
 donc **deja identifie avant meme d'ajouter l'IA locale**.
 
+Le risque n'est pas le throttling d'un chassis portable, mais
+**l'accumulation thermique dans le meuble** : une 3090 Ti dissipe 450 W en
+continu dans un volume souvent clos, et l'empoussierement d'un lieu public
+degrade la ventilation au fil des mois.
+
 **Test a mener des le prototype** : charge soutenue 2 h, releve des
-temperatures GPU/CPU et du framerate. Si throttling, leviers dans l'ordre :
-cap a 30 fps, reduction de la resolution interne, LLM 3B au lieu de 7B,
-ventilation active du meuble.
+temperatures GPU/CPU et du framerate. Si derive, leviers dans l'ordre :
+cap a 30 fps, `nvidia-smi -pl` pour limiter le power target (une 3090 Ti
+bridee a 300 W perd ~5 % de perfs pour ~30 % de chaleur en moins),
+reduction de la resolution interne, ventilation active du meuble,
+maintenance de depoussierage planifiee.
 
 ## Stockage — 500 Go
 

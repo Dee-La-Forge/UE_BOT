@@ -1,0 +1,53 @@
+# Sidecar IA locale — configuration
+#
+# Tout ce qui etait code en dur dans l'ancien projet vit ici.
+# Modifiable sans recompiler quoi que ce soit.
+
+serveur:
+  hote: "127.0.0.1"
+  port: 8765          # WebSocket expose a Unreal
+
+stt:
+  # faster-whisper, sur CPU (les 64 Go de RAM sont sous-employes)
+  modele: "small"     # tiny | base | small | medium | large-v3
+  peripherique: "cpu"
+  type_calcul: "int8"
+  langue: "fr"
+  # Le VAD amont (SileroVAD cote Unreal) fournit deja des segments propres.
+  vad_filtre: true
+
+llm:
+  # llama.cpp server, lance separement — voir scripts/setup.ps1
+  url: "http://127.0.0.1:8080"
+  modele: "qwen2.5-7b-instruct-q4_k_m.gguf"
+  temperature: 0.7
+  top_p: 0.9
+  max_tokens: 200
+  # Contraint le format de sortie : texte parle, puis tags emotion/verdict
+  grammaire: "grammars/reponse.gbnf"
+
+tts:
+  moteur: "piper"     # piper | xtts
+  voix: "fr_FR-siwis-medium"
+  peripherique: "cpu"
+  vitesse: 1.0
+
+lipsync:
+  # NeuroSync Local API — audio vers 61 blendshapes ARKit + 7 emotions
+  active: true
+  url: "http://127.0.0.1:5000"
+  # Repli si NeuroSync est indisponible : mapping phonemes vers les
+  # 25 poses MHF_* deja presentes dans le plugin Convai.
+  repli_visemes: true
+
+scenario:
+  fichier: "scenario/agent.yaml"
+  nb_questions: 3
+  # Delais de la machine a etats (secondes)
+  timeout_reponse_visiteur: 12.0
+  timeout_abandon: 30.0
+
+mesures:
+  # Chronometrage de chaque etage — c'est l'objet du prototype
+  actif: true
+  fichier_sortie: "../benchmarks/latence.jsonl"

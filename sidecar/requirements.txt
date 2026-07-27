@@ -1,0 +1,23 @@
+# Sidecar IA locale — Python 3.12
+#
+# Le LLM n'est PAS dans cette liste : il tourne dans un processus separe
+# (llama.cpp server, binaire CUDA precompile). Voir scripts/setup.ps1.
+# Cette separation evite la compilation de llama-cpp-python sous Windows
+# et donne l'isolation de crash recherchee pour une borne.
+
+# --- STT (CPU) ---
+faster-whisper==1.0.3
+
+# --- TTS (CPU) ---
+piper-tts==1.2.0
+
+# --- Client LLM (HTTP/SSE vers llama.cpp server) ---
+httpx==0.27.2
+
+# --- Transport vers Unreal ---
+websockets==13.1
+
+# --- Utilitaires ---
+pyyaml==6.0.2
+numpy==1.26.4
+sounddevice==0.5.1   # capture micro pour les tests hors Unreal
