@@ -1,0 +1,67 @@
+#!/usr/bin/env bash
+# Migration des assets depuis l'ancien projet.
+#
+# Copie uniquement ce qui sert, et laisse derriere ce qui est regenerable
+# (Intermediate, Binaries) ou mort (Grondin, Smith, PoliceUniform, presets
+# d'eclairage). Idempotent : relancable sans dommage.
+
+set -u
+ANCIEN="/c/Users/expo/Desktop/GardeFrontiere by Dboy/GardeFrontiereByDboy"
+NOUVEAU="$(cd "$(dirname "$0")" && pwd)"
+
+copier() {
+  local src="$ANCIEN/$1" dst="$NOUVEAU/$2"
+  if [ ! -e "$src" ]; then
+    echo "  ABSENT   $1"
+    return 1
+  fi
+  mkdir -p "$(dirname "$dst")"
+  cp -r "$src" "$dst" 2>/dev/null
+  local taille; taille=$(du -sm "$dst" 2>/dev/null | cut -f1)
+  printf "  ok  %-52s %5s Mo\n" "$1" "$taille"
+}
+
+echo ""
+echo "=== 1/4  Plugin Convai — Source, Content, Resources ==="
+echo "  (Intermediate et Binaries exclus : regeneres a la compilation)"
+mkdir -p "$NOUVEAU/Plugins/Convai"
+cp "$ANCIEN/Plugins/Convai/ConvAI.uplugin" "$NOUVEAU/Plugins/Convai/" 2>/dev/null && echo "  ok  ConvAI.uplugin"
+copier "Plugins/Convai/Source"    "Plugins/Convai/Source"
+copier "Plugins/Convai/Content"   "Plugins/Convai/Content"
+copier "Plugins/Convai/Resources" "Plugins/Convai/Resources"
+
+echo ""
+echo "=== 2/4  Plugin SerialCOM ==="
+mkdir -p "$NOUVEAU/Plugins/SerialCOM"
+cp "$ANCIEN/Plugins/SerialCOM/SERIALCOM.uplugin" "$NOUVEAU/Plugins/SerialCOM/" 2>/dev/null && echo "  ok  SERIALCOM.uplugin"
+copier "Plugins/SerialCOM/Source" "Plugins/SerialCOM/Source"
+
+echo ""
+echo "=== 3/4  MetaHuman ==="
+copier "Content/MetaHumans/AgentGermain" "Content/MetaHumans/AgentGermain"
+copier "Content/MetaHumans/Common"       "Content/MetaHumans/Common"
+
+echo ""
+echo "=== 4/4  Scenographie et logique existante ==="
+for d in GlitchFx StampFx Materials Meshes Lidar FirstPerson; do
+  copier "Content/$d" "Content/$d"
+done
+copier "Content/Studio.umap"                "Content/Studio.umap"
+copier "Content/BP_ConvaiCharacterBase.uasset" "Content/BP_ConvaiCharacterBase.uasset"
+copier "Content/BP_AutoGainComponent.uasset"   "Content/BP_AutoGainComponent.uasset"
+
+echo ""
+echo "=== NON MIGRE (volontairement) ==="
+cat <<'NOTE'
+  AgentGrondin, AgentSmith   aucun Character ID, aucune reference
+  PoliceUniform              non reference par la scene
+  Maps/MHC_LightingPresets   18 maps d'exemple MetaHuman
+  Intermediate, Binaries     regeneres a la compilation
+  Saved, DerivedDataCache    caches
+NOTE
+
+echo ""
+echo "=== BILAN ==="
+du -sm "$NOUVEAU/Content" "$NOUVEAU/Plugins" 2>/dev/null
+echo "  --- disque ---"
+df -h /c | tail -1

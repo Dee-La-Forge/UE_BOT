@@ -19,6 +19,25 @@ Export/
 Windows/
 Packaged/
 StagedBuilds/
+Builds/
+
+# ---------- Assets importes, volontairement hors depot ----------
+#
+# Distinction retenue : on versionne ce qu'on CREE, pas ce qu'on IMPORTE.
+#
+# Ces deux ensembles pesent 3,4 Go et ne sont pas notre travail : ce sont
+# des assets tiers, reproductibles a l'identique depuis l'ancien projet
+# archive, via unreal/migrer_assets.sh — lui-meme versionne.
+#
+# Les versionner doublerait leur poids sur disque (copie de travail + objets
+# LFS) pour aucun gain : ils ne changent jamais.
+#
+# En revanche TOUT le contenu que nous produisons — Blueprints de
+# scenographie, map, materiaux, widgets — est suivi normalement, via LFS
+# (voir .gitattributes).
+unreal/Content/MetaHumans/
+unreal/Plugins/Convai/
+unreal/Plugins/SerialCOM/
 
 # ---------- Sidecar IA (Python) ----------
 __pycache__/

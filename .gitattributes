@@ -1,0 +1,52 @@
+# Git LFS — assets binaires Unreal.
+#
+# A configurer AVANT le premier commit d'assets : un binaire entre en clair
+# dans l'historique y reste pour toujours, et le depot devient lourd a
+# cloner pour de bon. C'est l'un des defauts qu'on ne reproduit pas ici.
+
+*.uasset  filter=lfs diff=lfs merge=lfs -text
+*.umap    filter=lfs diff=lfs merge=lfs -text
+*.ubulk   filter=lfs diff=lfs merge=lfs -text
+*.uexp    filter=lfs diff=lfs merge=lfs -text
+*.upack   filter=lfs diff=lfs merge=lfs -text
+
+# Sources et mailles importees
+*.fbx     filter=lfs diff=lfs merge=lfs -text
+*.abc     filter=lfs diff=lfs merge=lfs -text
+
+# Textures
+*.png     filter=lfs diff=lfs merge=lfs -text
+*.jpg     filter=lfs diff=lfs merge=lfs -text
+*.jpeg    filter=lfs diff=lfs merge=lfs -text
+*.tga     filter=lfs diff=lfs merge=lfs -text
+*.exr     filter=lfs diff=lfs merge=lfs -text
+*.hdr     filter=lfs diff=lfs merge=lfs -text
+*.psd     filter=lfs diff=lfs merge=lfs -text
+
+# Audio et video
+*.wav     filter=lfs diff=lfs merge=lfs -text
+*.mp3     filter=lfs diff=lfs merge=lfs -text
+*.ogg     filter=lfs diff=lfs merge=lfs -text
+*.mp4     filter=lfs diff=lfs merge=lfs -text
+
+# Bibliotheques tierces (gRPC du plugin Convai)
+*.lib     filter=lfs diff=lfs merge=lfs -text
+*.dll     filter=lfs diff=lfs merge=lfs -text
+*.so      filter=lfs diff=lfs merge=lfs -text
+*.a       filter=lfs diff=lfs merge=lfs -text
+*.dylib   filter=lfs diff=lfs merge=lfs -text
+
+# ---------------------------------------------------------------------------
+# Fichiers texte : fins de ligne normalisees, pour eviter le bruit de diff
+# entre Windows et le reste.
+# ---------------------------------------------------------------------------
+*.h       text eol=lf
+*.cpp     text eol=lf
+*.cs      text eol=lf
+*.py      text eol=lf
+*.md      text eol=lf
+*.ini     text eol=lf
+*.yaml    text eol=lf
+*.gbnf    text eol=lf
+*.uproject   text eol=lf
+*.uplugin    text eol=lf
