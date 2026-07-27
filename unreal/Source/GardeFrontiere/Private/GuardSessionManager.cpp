@@ -1,0 +1,282 @@
+#include "GuardSessionManager.h"
+
+#include "GardeFrontiere.h"
+#include "SidecarClient.h"
+#include "LidarPresenceComponent.h"
+#include "TimerManager.h"
+#include "Engine/World.h"
+
+AGuardSessionManager::AGuardSessionManager()
+{
+	PrimaryActorTick.bCanEverTick = false;
+
+	Presence = CreateDefaultSubobject<ULidarPresenceComponent>(TEXT("Presence"));
+}
+
+void AGuardSessionManager::BeginPlay()
+{
+	Super::BeginPlay();
+
+	Sidecar = NewObject<USidecarClient>(this);
+	Sidecar->OnParoleDebut.AddDynamic(this, &AGuardSessionManager::SurParoleDebut);
+	Sidecar->OnParoleFin.AddDynamic(this, &AGuardSessionManager::SurParoleFin);
+	Sidecar->OnVerdict.AddDynamic(this, &AGuardSessionManager::SurVerdict);
+	Sidecar->OnSessionTerminee.AddDynamic(this, &AGuardSessionManager::SurSessionTerminee);
+	Sidecar->OnPanne.AddDynamic(this, &AGuardSessionManager::SurPanneIA);
+	Sidecar->Connecter(UrlSidecar);
+
+	if (Presence)
+	{
+		Presence->OnPresenceDetectee.AddDynamic(this, &AGuardSessionManager::SurPresenceDetectee);
+		Presence->OnPresencePerdue.AddDynamic(this, &AGuardSessionManager::SurPresencePerdue);
+	}
+
+	ChangerPhase(EGuardPhase::Veille);
+	UE_LOG(LogGardeFrontiere, Log, TEXT("Borne prete — en veille"));
+}
+
+void AGuardSessionManager::EndPlay(const EEndPlayReason::Type Raison)
+{
+	AnnulerMinuteries();
+	if (Sidecar)
+	{
+		Sidecar->Deconnecter();
+	}
+	Super::EndPlay(Raison);
+}
+
+// -- Machine a etats -----------------------------------------------------
+
+void AGuardSessionManager::ChangerPhase(EGuardPhase Nouvelle)
+{
+	if (Phase == Nouvelle)
+	{
+		return;
+	}
+
+	const UEnum* Enum = StaticEnum<EGuardPhase>();
+	UE_LOG(LogGardeFrontiere, Log, TEXT("Phase : %s -> %s"),
+		*Enum->GetDisplayNameTextByValue((int64)Phase).ToString(),
+		*Enum->GetDisplayNameTextByValue((int64)Nouvelle).ToString());
+
+	Phase = Nouvelle;
+	OnPhaseChangee.Broadcast(Nouvelle);
+}
+
+int32 AGuardSessionManager::TirerAvatar()
+{
+	if (NombreAvatars <= 1)
+	{
+		return 0;
+	}
+
+	int32 Index = FMath::RandRange(0, NombreAvatars - 1);
+
+	// Sans cette precaution, le meme visage revient une fois sur trois —
+	// assez pour que deux visiteurs successifs le remarquent.
+	if (bEviterRepetitionAvatar && Index == IndexAvatarPrecedent)
+	{
+		Index = (Index + 1 + FMath::RandRange(0, NombreAvatars - 2)) % NombreAvatars;
+	}
+
+	IndexAvatarPrecedent = Index;
+	return Index;
+}
+
+void AGuardSessionManager::DemarrerSession()
+{
+	if (Phase != EGuardPhase::Veille)
+	{
+		UE_LOG(LogGardeFrontiere, Warning,
+			TEXT("Demarrage demande alors qu'une session est en cours — ignore"));
+		return;
+	}
+
+	DernierVerdict = EGuardVerdict::EnCours;
+	IndexAvatarCourant = TirerAvatar();
+
+	ChangerPhase(EGuardPhase::Accueil);
+
+	// Le Blueprint enchaine ici glitch + changement d'avatar. Le glitch a un
+	// role precis : masquer la substitution du MetaHuman.
+	OnSessionDemarree.Broadcast(IndexAvatarCourant);
+
+	if (Sidecar && Sidecar->EstConnecte())
+	{
+		Sidecar->SignalerPresence();
+	}
+	else
+	{
+		// Mode degrade : la borne accueille quand meme.
+		OnRepliqueDeSecours.Broadcast(TEXT("Papiers. Garde-frontiere."));
+	}
+
+	ArmerAbandon();
+}
+
+void AGuardSessionManager::TerminerSession(EGuardFinDeSession Raison)
+{
+	if (Phase == EGuardPhase::Veille)
+	{
+		return;
+	}
+
+	AnnulerMinuteries();
+
+	const UEnum* Enum = StaticEnum<EGuardFinDeSession>();
+	UE_LOG(LogGardeFrontiere, Log, TEXT("Fin de session : %s"),
+		*Enum->GetDisplayNameTextByValue((int64)Raison).ToString());
+
+	if (Sidecar && Sidecar->EstConnecte())
+	{
+		Sidecar->ReinitialiserSession();
+	}
+
+	ChangerPhase(EGuardPhase::Veille);
+	OnSessionFinie.Broadcast(Raison);
+}
+
+// -- Capteur de presence -------------------------------------------------
+
+void AGuardSessionManager::SurPresenceDetectee()
+{
+	if (Phase == EGuardPhase::Veille)
+	{
+		DemarrerSession();
+	}
+}
+
+void AGuardSessionManager::SurPresencePerdue()
+{
+	if (Phase == EGuardPhase::Veille)
+	{
+		return;
+	}
+
+	// Depart apres le verdict : deroulement nominal, la place est liberee.
+	// Depart avant : abandon.
+	const bool bApresVerdict =
+		Phase == EGuardPhase::SortieZone || Phase == EGuardPhase::Verdict;
+
+	if (Sidecar && Sidecar->EstConnecte())
+	{
+		Sidecar->SignalerAbsence();
+	}
+
+	TerminerSession(bApresVerdict
+		? EGuardFinDeSession::Nominale
+		: EGuardFinDeSession::Abandon);
+}
+
+// -- Sidecar -------------------------------------------------------------
+
+void AGuardSessionManager::SurParoleDebut(const FString& Texte, EGuardEmotion Emotion)
+{
+	bIADisponible = true;
+
+	if (Phase == EGuardPhase::Accueil)
+	{
+		ChangerPhase(EGuardPhase::Interrogatoire);
+	}
+
+	OnEmotionChangee.Broadcast(Emotion);
+
+	// Tant que l'echange vit, l'abandon est repousse.
+	ArmerAbandon();
+}
+
+void AGuardSessionManager::SurParoleFin()
+{
+	ArmerAbandon();
+}
+
+void AGuardSessionManager::SurVerdict(EGuardVerdict Decision)
+{
+	DernierVerdict = Decision;
+	ChangerPhase(EGuardPhase::Verdict);
+
+	// Le Blueprint affiche ici stamp_accepted ou stamp_refused.
+	OnVerdictRendu.Broadcast(Decision);
+}
+
+void AGuardSessionManager::SurSessionTerminee()
+{
+	// On laisse le visiteur lire son tampon avant de le prier de sortir.
+	if (UWorld* Monde = GetWorld())
+	{
+		Monde->GetTimerManager().SetTimer(
+			MinuterieSortie, this, &AGuardSessionManager::SurDelaiSortie,
+			FMath::Max(DelaiAvantSortie, 0.01f), false);
+	}
+}
+
+void AGuardSessionManager::SurDelaiSortie()
+{
+	ChangerPhase(EGuardPhase::SortieZone);
+
+	// Le Blueprint affiche le panneau "quittez la zone" (Exit_Stamp).
+	OnDemandeSortieZone.Broadcast();
+
+	// A partir d'ici, seul le depart du visiteur clot la session. On garde
+	// toutefois un abandon arme : sans lui, un visiteur qui reste plante
+	// devant la borne la bloquerait indefiniment.
+	ArmerAbandon();
+}
+
+void AGuardSessionManager::SurPanneIA(const FString& Raison)
+{
+	bIADisponible = false;
+	UE_LOG(LogGardeFrontiere, Error, TEXT("IA indisponible : %s"), *Raison);
+
+	// Une borne muette avec un visiteur planté devant est le seul echec
+	// vraiment couteux. On parle, meme mal.
+	if (Phase != EGuardPhase::Veille)
+	{
+		OnRepliqueDeSecours.Broadcast(TEXT("Poste ferme. Repassez plus tard."));
+	}
+
+	if (UWorld* Monde = GetWorld())
+	{
+		Monde->GetTimerManager().SetTimer(
+			MinuterieReconnexion, this, &AGuardSessionManager::TenterReconnexion,
+			FMath::Max(DelaiReconnexion, 1.f), false);
+	}
+}
+
+void AGuardSessionManager::TenterReconnexion()
+{
+	if (Sidecar && !Sidecar->EstConnecte())
+	{
+		UE_LOG(LogGardeFrontiere, Log, TEXT("Sidecar : nouvelle tentative"));
+		Sidecar->Connecter(UrlSidecar);
+	}
+}
+
+// -- Minuteries ----------------------------------------------------------
+
+void AGuardSessionManager::ArmerAbandon()
+{
+	if (UWorld* Monde = GetWorld())
+	{
+		Monde->GetTimerManager().SetTimer(
+			MinuterieAbandon, this, &AGuardSessionManager::SurAbandon,
+			FMath::Max(DelaiAbandon, 5.f), false);
+	}
+}
+
+void AGuardSessionManager::SurAbandon()
+{
+	UE_LOG(LogGardeFrontiere, Warning, TEXT("Aucune interaction — abandon"));
+	TerminerSession(EGuardFinDeSession::Timeout);
+}
+
+void AGuardSessionManager::AnnulerMinuteries()
+{
+	if (UWorld* Monde = GetWorld())
+	{
+		FTimerManager& T = Monde->GetTimerManager();
+		T.ClearTimer(MinuterieAbandon);
+		T.ClearTimer(MinuterieSortie);
+		T.ClearTimer(MinuterieReconnexion);
+	}
+}
