@@ -33,14 +33,15 @@ import torch.nn.functional as F
 SR = 88200                      # taux d'echantillonnage attendu
 FPS = 60                        # trames de sortie par seconde
 DUREE_TRAME = 1.0 / FPS         # 16,67 ms
-N_MFCC = 23                     # ×3 (mfcc, delta, delta2) = 69 dims utiles
-N_FEATURES = N_MFCC * 3         # 69
-
-# Le checkpoint Convai attend 256 dimensions alors que seules 69 portent du
-# signal. Verifie sur les poids : la norme par colonne de `encoder.embedding`
-# vaut 0.58-1.91 sur les dimensions 0-68, puis retombe a un plateau plat de
-# 0.6496 +/- 0.015 au-dela — signature de poids non entraines, donc d'entrees
-# toujours nulles. Les 187 dimensions restantes sont du remplissage.
+N_MFCC = 23                     # ×3 (mfcc, delta, delta2) = 69 dimensions
+N_MFCC_TOTAL = N_MFCC * 3       # 69
+N_AUTOCORR = 187                # coefficients d'autocorrelation retenus
+# 69 + 187 = 256, la largeur attendue par le checkpoint.
+#
+# Le bloc d'autocorrelation porte les poids les plus uniformes de la matrice
+# d'embedding (0.6496 +/- 0.015). Cette platitude n'est pas un signe de
+# poids morts, comme on pourrait le croire : elle traduit simplement que
+# toutes ces composantes sont de meme nature.
 TAILLE_FENETRE = 128            # trames par passe
 RECOUVREMENT = 16               # trames de fondu entre fenetres
 N_BLENDSHAPES = 61              # ARKit ; les 7 suivantes sont des emotions
@@ -230,10 +231,12 @@ def deduire_dimensions(etat: dict) -> Dimensions:
     }
     n_couches = max(couches) + 1
 
-    # Le nombre de tetes n'est pas inscrit dans les poids : les projections
-    # q/k/v sont carrees quel qu'il soit. On retient la valeur publiee (4),
-    # coherente avec dim_cachee=1024 -> tetes de 256.
-    n_tetes = 4
+    # Le nombre de tetes n'est PAS inscrit dans les poids : les projections
+    # q/k/v restent carrees quel qu'il soit. Un mauvais choix decoupe
+    # l'attention de travers sans declencher la moindre erreur de forme.
+    # Valeur tiree de la config qui accompagne ce checkpoint (8 couches,
+    # entree 256) : 16 tetes de 64.
+    n_tetes = 16
 
     return Dimensions(dim_entree, dim_cachee, dim_sortie, n_couches, n_tetes, dim_ff)
 
@@ -305,16 +308,58 @@ class NeuroSync:
         if n % 2 == 1:
             paires = np.hstack((paires, empile[:, -1:]))
 
-        features = paires.T.astype(np.float32)   # (trames, 69)
+        mfcc_final = paires.T.astype(np.float32)          # (trames, 69)
+        autocorr = self._autocorrelation(y, longueur_trame, saut)   # (trames, 187)
 
-        # Completion par des zeros jusqu'a la largeur attendue (256).
-        manque = self.dims.dim_entree - features.shape[1]
-        if manque > 0:
-            features = np.pad(features, ((0, 0), (0, manque)), mode="constant")
-        elif manque < 0:
-            features = features[:, : self.dims.dim_entree]
+        # Les deux chaines peuvent differer d'une trame : l'autocorrelation
+        # rembourre le signal avant decoupage. On aligne sur la plus courte.
+        n = min(mfcc_final.shape[0], autocorr.shape[0])
+        return np.hstack([mfcc_final[:n], autocorr[:n]]).astype(np.float32)
 
-        return features
+    @staticmethod
+    def _autocorrelation(y: np.ndarray, longueur_trame: int, saut: int) -> np.ndarray:
+        """187 coefficients d'autocorrelation par trame.
+
+        Complement indispensable aux MFCC : c'est ce bloc qui porte la
+        periodicite du signal — donc la voisement, la hauteur, l'ouverture.
+        Sans lui, le modele ne dispose que de l'enveloppe spectrale et rend
+        un visage inerte.
+        """
+        rembourrage = longueur_trame // 2
+        y_pad = np.pad(y, pad_width=rembourrage, mode="reflect")
+
+        import librosa
+        trames = librosa.util.frame(y_pad, frame_length=longueur_trame, hop_length=saut)
+        trames = trames - trames.mean(axis=0, keepdims=True)
+        trames = trames * np.hanning(longueur_trame)[:, np.newaxis]
+
+        coeffs = []
+        milieu = longueur_trame - 1
+        for trame in trames.T:
+            plein = np.correlate(trame, trame, mode="full")
+            # On part du decalage nul et on garde N+1 valeurs.
+            retenu = plein[milieu: milieu + N_AUTOCORR + 1]
+            if retenu[0] != 0:
+                retenu = retenu / retenu[0]     # normalisation par l'energie
+            coeffs.append(retenu)
+
+        # (N+1, trames) puis on retire le decalage nul, qui vaut 1 partout.
+        a = np.array(coeffs).T[1:, :]
+
+        # Trames de bord parfois nulles : on recopie la voisine.
+        if a.shape[1] >= 2:
+            if np.all(np.abs(a[:, 0]) < 1e-7):
+                a[:, 0] = a[:, 1]
+            if np.all(np.abs(a[:, -1]) < 1e-7):
+                a[:, -1] = a[:, -2]
+
+        # Meme reduction par paires que les MFCC, pour retomber a 60 fps.
+        n = a.shape[1]
+        paires = a[:, : n // 2 * 2].reshape(a.shape[0], -1, 2).mean(axis=2)
+        if n % 2 == 1:
+            paires = np.hstack((paires, a[:, -1:]))
+
+        return paires.T.astype(np.float32)
 
     # -- Inference --------------------------------------------------------
 
