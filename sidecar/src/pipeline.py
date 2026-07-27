@@ -16,7 +16,7 @@ modele : ils sont imposes par bascule de grammaire GBNF.
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import numpy as np
@@ -37,6 +37,9 @@ class MorceauAudio:
     taux: int
     texte: str
     premier: bool
+    # Suite de poses MHF_* (nom, debut_s, fin_s), pour le lipsync de repli
+    # quand NeuroSync est indisponible. Vide sinon.
+    visemes: list[tuple[str, float, float]] = field(default_factory=list)
 
 
 class Pipeline:
@@ -157,13 +160,19 @@ class Pipeline:
                 m.marquer("llm_premier_token")
                 m.marquer("llm_premiere_phrase")
 
-            pcm = self.tts.synthetiser(phrase)
+            parole = self.tts.synthetiser(phrase)
 
             if premier:
                 m.marquer("tts_premier_chunk")
                 m.marquer("audio_premier_chunk")
 
-            yield MorceauAudio(pcm=pcm, taux=self.tts.taux, texte=phrase, premier=premier)
+            yield MorceauAudio(
+                pcm=parole.pcm,
+                taux=parole.taux,
+                texte=phrase,
+                premier=premier,
+                visemes=parole.visemes,
+            )
             premier = False
 
         m.marquer("fin")

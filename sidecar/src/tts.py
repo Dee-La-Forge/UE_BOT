@@ -1,20 +1,58 @@
-"""Synthese vocale — Piper sur CPU.
+"""Synthese vocale — Piper 1.6 sur CPU.
 
-Piper est plus rapide que le temps reel sur CPU et pese ~50 Mo. Il rend la
+Piper est plus rapide que le temps reel sur CPU et pese ~60 Mo. Il rend la
 main phrase par phrase, ce qui est exactement ce dont le pipeline a besoin.
 
-Si la mesure montre que la qualite vocale ne tient pas le personnage,
-XTTS-v2 sur GPU est l'alternative : bien meilleure prosodie, clonage de
-voix, mais ~2 Go de VRAM et ~300 ms de plus. Les 24 Go disponibles le
+Bonus decouvert a l'integration : Piper 1.6 expose les **phonemes avec leur
+alignement temporel**. C'est precisement ce qu'il faut pour alimenter les
+25 poses de visemes MHF_* deja presentes dans le plugin Convai — le lipsync
+de repli ne demande donc aucun modele supplementaire.
+
+Si la qualite vocale ne tient pas le personnage, XTTS-v2 sur GPU reste
+l'alternative (~2 Go de VRAM, ~300 ms de plus). Les 24 Go disponibles le
 permettent — a n'engager qu'apres mesure.
 """
 
 from __future__ import annotations
 
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import numpy as np
-from piper import PiperVoice
+from piper import PiperVoice, SynthesisConfig
+
+# Correspondance phoneme eSpeak -> pose de viseme du plugin Convai
+# (Plugins/Convai/Content/MetaHumans/Animations/Motions/Lips/MHF_*).
+# Utilise uniquement par le mode degrade, quand NeuroSync est indisponible.
+PHONEME_VERS_VISEME: dict[str, str] = {
+    "a": "MHF_AA", "ɑ": "MHF_AA", "ɐ": "MHF_AA", "ã": "MHF_AA",
+    "e": "MHF_EE", "ɛ": "MHF_EE", "ə": "MHF_EE", "ɛ̃": "MHF_EE",
+    "i": "MHF_II", "j": "MHF_II", "ɪ": "MHF_II",
+    "o": "MHF_OH", "ɔ": "MHF_OH", "ɔ̃": "MHF_OH", "ø": "MHF_OH", "œ": "MHF_OH",
+    "u": "MHF_OU", "w": "MHF_OU", "y": "MHF_OU", "ɥ": "MHF_OU",
+    "p": "MHF_PBM", "b": "MHF_PBM", "m": "MHF_PBM",
+    "f": "MHF_FV", "v": "MHF_FV",
+    "t": "MHF_TD", "d": "MHF_TD",
+    "k": "MHF_KG", "g": "MHF_KG", "ɡ": "MHF_KG",
+    "s": "MHF_SZ", "z": "MHF_SZ",
+    "ʃ": "MHF_CH", "ʒ": "MHF_CH",
+    "n": "MHF_NL", "l": "MHF_NL", "ɲ": "MHF_NL", "ŋ": "MHF_NL",
+    "ʁ": "MHF_RR", "r": "MHF_RR", "ʀ": "MHF_RR",
+    "θ": "MHF_TH", "ð": "MHF_TH",
+}
+
+VISEME_REPOS = "MHF_None"
+
+
+@dataclass
+class Parole:
+    """Une phrase synthetisee, avec de quoi animer les levres."""
+
+    pcm: np.ndarray                       # float32 mono, dans [-1, 1]
+    taux: int
+    phonemes: list[str] = field(default_factory=list)
+    visemes: list[tuple[str, float, float]] = field(default_factory=list)
+    # visemes : (nom_pose, debut_s, fin_s) — vide si alignements indisponibles
 
 
 class Synthetiseur:
@@ -24,21 +62,66 @@ class Synthetiseur:
         if not modele.exists():
             raise FileNotFoundError(
                 f"Voix Piper introuvable : {modele}\n"
-                f"Lancer scripts/setup.ps1 pour telecharger les modeles."
+                f"Lancer scripts/telecharger.sh pour recuperer les modeles."
             )
         self._voix = PiperVoice.load(str(modele))
         self.taux = self._voix.config.sample_rate
 
-    def synthetiser(self, texte: str) -> np.ndarray:
-        """Synthetise une phrase, rendue en PCM float32 mono."""
-        morceaux = [
-            np.frombuffer(bloc, dtype=np.int16)
-            for bloc in self._voix.synthesize_stream_raw(texte)
-        ]
-        if not morceaux:
-            return np.zeros(0, dtype=np.float32)
-        return (np.concatenate(morceaux).astype(np.float32) / 32768.0)
+        vitesse = config.get("vitesse", 1.0)
+        self._config = SynthesisConfig(
+            # length_scale > 1 ralentit ; on inverse pour raisonner en vitesse.
+            length_scale=(1.0 / vitesse) if vitesse and vitesse != 1.0 else None,
+            volume=config.get("volume", 1.0),
+        )
+        # Les alignements ne servent qu'au lipsync de repli : inutile de les
+        # calculer quand NeuroSync est aux commandes.
+        self._alignements = bool(config.get("phonemes_pour_repli", True))
 
-    def en_pcm16(self, audio: np.ndarray) -> bytes:
+    def synthetiser(self, texte: str) -> Parole:
+        """Synthetise une phrase et rend l'audio plus les visemes."""
+        morceaux = list(
+            self._voix.synthesize(
+                texte, syn_config=self._config, include_alignments=self._alignements
+            )
+        )
+        if not morceaux:
+            return Parole(pcm=np.zeros(0, dtype=np.float32), taux=self.taux)
+
+        pcm = np.concatenate([m.audio_float_array for m in morceaux]).astype(np.float32)
+        phonemes = [p for m in morceaux for p in (m.phonemes or [])]
+
+        return Parole(
+            pcm=pcm,
+            taux=morceaux[0].sample_rate,
+            phonemes=phonemes,
+            visemes=self._visemes(morceaux),
+        )
+
+    @staticmethod
+    def _visemes(morceaux) -> list[tuple[str, float, float]]:
+        """Convertit les alignements de phonemes en suite de poses MHF_*.
+
+        Les poses identiques consecutives sont fusionnees : inutile de
+        redeclencher la meme forme de bouche sur deux phonemes voisins.
+        """
+        suite: list[tuple[str, float, float]] = []
+        decalage = 0.0
+
+        for m in morceaux:
+            duree = len(m.audio_float_array) / m.sample_rate if m.sample_rate else 0.0
+            for al in (m.phoneme_alignments or []):
+                pose = PHONEME_VERS_VISEME.get(al.phoneme, VISEME_REPOS)
+                debut = decalage + getattr(al, "start_sec", 0.0)
+                fin = decalage + getattr(al, "end_sec", 0.0)
+                if suite and suite[-1][0] == pose:
+                    suite[-1] = (pose, suite[-1][1], fin)   # fusion
+                else:
+                    suite.append((pose, debut, fin))
+            decalage += duree
+
+        return suite
+
+    @staticmethod
+    def en_pcm16(audio: np.ndarray) -> bytes:
         """Convertit en PCM16 — format attendu par NeuroSync et Unreal."""
         return (np.clip(audio, -1.0, 1.0) * 32767).astype(np.int16).tobytes()

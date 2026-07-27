@@ -1,15 +1,19 @@
 # Sidecar IA locale — Python 3.12
 #
 # Le LLM n'est PAS dans cette liste : il tourne dans un processus separe
-# (llama.cpp server, binaire CUDA precompile). Voir scripts/setup.ps1.
+# (llama.cpp server, binaire CUDA precompile). Voir scripts/telecharger.sh.
 # Cette separation evite la compilation de llama-cpp-python sous Windows
 # et donne l'isolation de crash recherchee pour une borne.
 
 # --- STT (CPU) ---
 faster-whisper==1.0.3
+requests           # dependance transitive de faster-whisper, absente de ses metadonnees
 
 # --- TTS (CPU) ---
-piper-tts==1.2.0
+# 1.6.0 minimum : les versions <= 1.2 dependent de piper-phonemize, qui n'a
+# aucun wheel Windows pour Python 3.12. La 1.6 s'en affranchit et expose en
+# prime les alignements de phonemes (utiles au lipsync de repli).
+piper-tts==1.6.0
 
 # --- Client LLM (HTTP/SSE vers llama.cpp server) ---
 httpx==0.27.2
