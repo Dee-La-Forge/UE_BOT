@@ -119,6 +119,20 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Capteur|Pilotage")
 	void ForcerPresence(bool bNouvelEtat);
 
+	/**
+	 * Journalise une mesure par seconde, et signale les trames illisibles.
+	 *
+	 * Sans cette trace, un capteur muet et un capteur mal decode sont
+	 * indiscernables : le port s'ouvre, le journal dit "COM4 ouvert", et rien
+	 * n'indique qu'aucune trame n'est exploitable. C'est ce qui a rendu une
+	 * vitesse de liaison erronee invisible pendant tout un apres-midi.
+	 *
+	 * Laisse actif pendant la mise au point de la borne. A decocher une fois
+	 * les distances calees, sinon le journal grossit d'une ligne par seconde.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Capteur|Diagnostic")
+	bool bTracerReleves = true;
+
 protected:
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type Raison) override;
@@ -137,6 +151,14 @@ private:
 
 	int32 CompteurProche = 0;
 	int32 CompteurLoin = 0;
+
+	/** Trames consecutives ecartees, et memoire de la derniere vue. */
+	int32 CompteurRejets = 0;
+	bool bRejetSignale = false;
+	FString DernierRejet;
+
+	/** Horodatage de la derniere mesure tracee, pour limiter a une par seconde. */
+	double DerniereTrace = 0.0;
 
 	/**
 	 * Une lecture est en vol sur un thread de fond.

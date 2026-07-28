@@ -186,7 +186,27 @@ void ULidarPresenceComponent::TraiterReleve(const FString& Brut)
 	const FString Ligne = Brut.TrimStartAndEnd();
 	if (Ligne.IsEmpty() || !Ligne.IsNumeric())
 	{
-		return;   // trame partielle ou bruit : on ignore, sans compter
+		// Ecarter en silence etait le comportement d'origine, et c'est ce qui
+		// a rendu une vitesse de liaison erronee indetectable : le port
+		// s'ouvrait, aucune trame n'etait lisible, et rien ne le disait.
+		//
+		// On ecarte toujours — une trame partielle est normale — mais un flot
+		// continu de rejets ne l'est pas, et se signale une fois.
+		++CompteurRejets;
+		if (!Ligne.IsEmpty())
+		{
+			DernierRejet = Ligne.Left(40);
+		}
+
+		if (CompteurRejets >= 50 && !bRejetSignale)
+		{
+			bRejetSignale = true;
+			UE_LOG(LogGardeFrontiere, Warning,
+				TEXT("Capteur : %d trames illisibles d'affilee sur COM%d — vitesse ")
+				TEXT("probablement incorrecte (%d bauds configures). Dernier echantillon : '%s'"),
+				CompteurRejets, PortCOM, VitesseBauds, *DernierRejet);
+		}
+		return;
 	}
 
 	const int32 Distance = FCString::Atoi(*Ligne);
@@ -194,7 +214,29 @@ void ULidarPresenceComponent::TraiterReleve(const FString& Brut)
 	{
 		return;
 	}
+
+	// Une trame valide remet le compteur a zero — et rearme l'avertissement,
+	// pour qu'une liaison qui se degrade en cours de route se signale a
+	// nouveau plutot que de rester muette apres un seul message.
+	CompteurRejets = 0;
+	bRejetSignale = false;
+
 	DerniereDistanceCm = Distance;
+
+	if (bTracerReleves)
+	{
+		// Une ligne par seconde au plus : a 10 Hz, tout tracer noierait le
+		// journal sans rien apprendre de plus.
+		const double Maintenant = FPlatformTime::Seconds();
+		if (Maintenant - DerniereTrace >= 1.0)
+		{
+			DerniereTrace = Maintenant;
+			UE_LOG(LogGardeFrontiere, Log,
+				TEXT("Capteur : %d cm (seuil %d, sortie %d) — %s"),
+				Distance, SeuilPresenceCm, SeuilPresenceCm + HysteresisCm,
+				bPresent ? TEXT("present") : TEXT("personne"));
+		}
+	}
 
 	// Hysteresis : le seuil de sortie est plus large que celui d'entree,
 	// pour qu'un visiteur pile a la limite ne fasse pas osciller la borne.
