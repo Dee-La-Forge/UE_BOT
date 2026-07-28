@@ -30,9 +30,10 @@ public:
 
 	// -- Liaison serie ---------------------------------------------------
 
+	/** COM5 sur la borne — releve dans le journal de l'ancien projet. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Capteur|Liaison",
 		meta = (ClampMin = "1"))
-	int32 PortCOM = 3;
+	int32 PortCOM = 5;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Capteur|Liaison")
 	int32 VitesseBauds = 9600;
