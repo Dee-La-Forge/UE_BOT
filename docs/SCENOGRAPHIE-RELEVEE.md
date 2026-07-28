@@ -40,6 +40,39 @@ On Component Activated (CharacterMovement)
 Meme motif pour le capteur : `Get All Actors Of Class(BP_LidarManager)` →
 `GET[0]` → `Bind Event to On Visitor Left`.
 
+## Glitch — mecanisme complet
+
+```
+Glitch_FX     (evenement) → SET Glitch Loop Active = false
+GlitchFXLoop  (evenement) → SET Glitch Loop Active = true
+   └→ Branch(Is Glitching) → SET Is Glitching = true → Delay 0.2
+      → Is Valid(PPV Glitch, Dynamic Glitch Mat)
+      → Add or Update Blendable (In Weight 1.0)      // active l'effet
+      → Play Sound 2D (Glitch_Sound_By_DyBoy)
+      → GlitchTimeline (Play)
+
+GlitchTimeline · Update
+   → Set Scalar Parameter Value
+        Target         : Dynamic Glitch Mat
+        Parameter Name : "weight"
+        Value          ← sortie Weight de la timeline
+
+StopGlitch → SET Glitch Loop Active = false → SET Is Glitching = false
+   → Sequence
+        Then 0 : Is Valid → Set Scalar Parameter Value ("weight", 0.0)
+        Then 1 : Add or Update Blendable (In Weight 0.0)
+```
+
+**Deux leviers distincts, a ne pas confondre :**
+
+| | Role |
+|---|---|
+| `Add or Update Blendable` — In Weight | branche/debranche le materiau sur le PPV |
+| `Set Scalar Parameter Value` — "weight" | anime l'intensite, pilote par la timeline |
+
+Le premier est binaire (1.0 / 0.0), le second est continu. Couper l'un sans
+l'autre laisserait soit un effet fige, soit un materiau inutilement actif.
+
 ## Tampon
 
 ```
