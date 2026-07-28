@@ -66,13 +66,28 @@ demarre pendant que le LLM ecrit la suite. Cible : premier son en
 
 | Etape | Statut |
 |---|---|
-| Audit de l'existant | ✅ fait — `docs/AUDIT-EXISTANT.md` |
-| Depot + versionnement | ✅ fait |
-| Specs materielles de la borne | ✅ relevees — `docs/DIMENSIONNEMENT.md` |
-| Narrative Design Convai | 🟡 graphe recupere — `docs/NARRATIVE-DESIGN.md` |
-| Prototype sidecar (STT→LLM→TTS) | 🟡 ecrit, **jamais execute** |
-| Mesure de latence reelle | ⬜ **prochaine etape** |
-| Integration Unreal | ⬜ a venir |
+| Audit de l'existant | ✅ `docs/AUDIT-EXISTANT.md` |
+| Depot + versionnement (LFS) | ✅ |
+| Specs materielles de la borne | ✅ `docs/DIMENSIONNEMENT.md` |
+| Narrative Design Convai | ✅ `docs/NARRATIVE-DESIGN.md` |
+| Sidecar STT→LLM→TTS | ✅ **694 ms** jusqu'au premier son |
+| Lipsync local | ✅ visemes MHF_* (0 ms de derive) + NeuroSync |
+| Projet Unreal 5.7 + C++ | ✅ compile et lie |
+| Migration des assets | ✅ 3,4 Go, verifie par comptage |
+| **Parite avec l'ancien projet** | ✅ **la borne tourne a l'identique** |
+| Bascule vers le sidecar | ⬜ **prochaine etape** |
+| Micro sur la borne | ⬜ aucun peripherique de capture |
+| Test thermique 2 h | ⬜ a mener une fois la pile complete |
+
+### Le jalon de parite
+
+La borne fonctionne dans le nouveau projet exactement comme dans l'ancien —
+LiDAR, declencheur narratif, MetaHuman, decor, VAD. Cette etape n'etait pas
+cosmetique : elle fournit une **base de comparaison**. Tout ce qui cassera
+desormais sera imputable a la nouvelle architecture, pas au demenagement.
+
+> ⚠️ La cle API Convai a ete remise pour cette verification. **A retirer**
+> une fois le sidecar branche — c'est la dependance qu'on supprime.
 
 ## Reste a recuperer depuis Convai
 
