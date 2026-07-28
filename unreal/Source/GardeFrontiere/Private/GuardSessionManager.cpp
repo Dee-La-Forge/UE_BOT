@@ -79,11 +79,26 @@ void AGuardSessionManager::BeginPlay()
 
 void AGuardSessionManager::EndPlay(const EEndPlayReason::Type Raison)
 {
-	AnnulerMinuteries();
+	// Ordre important : on coupe les sources d'evenements avant de detruire
+	// quoi que ce soit. Un evenement arrivant en pleine destruction fige le
+	// thread de jeu — ou pire, le fait planter.
+	if (UWorld* Monde = GetWorld())
+	{
+		Monde->GetTimerManager().ClearAllTimersForObject(this);
+	}
+
 	if (Sidecar)
 	{
+		// Le lambda branche sur OnAudioRecu capture `this` : le detacher
+		// avant la destruction evite qu'une trame tardive n'y accede.
+		Sidecar->OnAudioRecu.Clear();
 		Sidecar->Deconnecter();
+		Sidecar = nullptr;
 	}
+
+	if (Voix)   { Voix->Interrompre(); }
+	if (Glitch) { Glitch->Arreter(); }
+
 	Super::EndPlay(Raison);
 }
 

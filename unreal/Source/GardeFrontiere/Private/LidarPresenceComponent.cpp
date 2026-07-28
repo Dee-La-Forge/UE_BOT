@@ -18,10 +18,11 @@ void ULidarPresenceComponent::BeginPlay()
 
 void ULidarPresenceComponent::EndPlay(const EEndPlayReason::Type Raison)
 {
+	// Les minuteries d'abord : une lecture ou une tentative d'ouverture qui
+	// se declencherait pendant la fermeture bloquerait le thread de jeu.
 	if (UWorld* Monde = GetWorld())
 	{
-		Monde->GetTimerManager().ClearTimer(MinuterieLecture);
-		Monde->GetTimerManager().ClearTimer(MinuterieReconnexion);
+		Monde->GetTimerManager().ClearAllTimersForObject(this);
 	}
 	FermerPort();
 	Super::EndPlay(Raison);
@@ -31,15 +32,19 @@ void ULidarPresenceComponent::EndPlay(const EEndPlayReason::Type Raison)
 
 void ULidarPresenceComponent::OuvrirPort()
 {
-	bool bOuvert = false;
-	Serie = USerialCom::OpenComPort(bOuvert, PortCOM, VitesseBauds);
-	bPortOuvert = bOuvert && Serie != nullptr;
-
 	UWorld* Monde = GetWorld();
-	if (!Monde)
+
+	// Ne rien tenter pendant la destruction : l'ouverture d'un port serie
+	// est un appel systeme bloquant, et le declencher au moment ou le
+	// monde disparait fige le thread de jeu.
+	if (!Monde || IsBeingDestroyed() || !IsValid(this))
 	{
 		return;
 	}
+
+	bool bOuvert = false;
+	Serie = USerialCom::OpenComPort(bOuvert, PortCOM, VitesseBauds);
+	bPortOuvert = bOuvert && Serie != nullptr;
 
 	if (bPortOuvert)
 	{

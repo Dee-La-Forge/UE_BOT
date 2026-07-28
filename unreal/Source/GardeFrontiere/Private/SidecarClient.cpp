@@ -39,10 +39,28 @@ void USidecarClient::Connecter(const FString& Url)
 
 void USidecarClient::Deconnecter()
 {
-	if (Socket.IsValid() && Socket->IsConnected())
+	if (!Socket.IsValid())
+	{
+		return;
+	}
+
+	// Detacher AVANT de fermer. Sans cela, la fermeture declenche OnClosed,
+	// qui diffuse OnPanne — vers un acteur potentiellement en cours de
+	// destruction. C'est la source la plus probable d'un gel a l'arret.
+	Socket->OnConnected().Clear();
+	Socket->OnConnectionError().Clear();
+	Socket->OnClosed().Clear();
+	Socket->OnMessage().Clear();
+	Socket->OnRawMessage().Clear();
+
+	if (Socket->IsConnected())
 	{
 		Socket->Close();
 	}
+
+	// On lache la reference sans attendre la poignee de fermeture : le
+	// sidecar est un processus distinct, rien ne garantit qu'il reponde
+	// dans le delai d'un arret de PIE.
 	Socket.Reset();
 }
 
