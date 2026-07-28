@@ -6,6 +6,7 @@
 #include "Components/SkeletalMeshComponent.h"
 #include "Engine/World.h"
 #include "GameFramework/Actor.h"
+#include "UObject/UnrealType.h"
 
 UAvatarSwitcherComponent::UAvatarSwitcherComponent()
 {
@@ -124,6 +125,9 @@ AActor* UAvatarSwitcherComponent::Spawner(int32 Index)
 	// La capture micro ne demarre qu'a la frame suivante — 40 ms apres le
 	// spawn dans les traces. Detruire le composant ici, dans la meme pile
 	// d'appels, la devance.
+	// Filet de securite pour les avatars qui descendraient encore du God
+	// Blueprint. BP_AgentGermain, lui, a ete reparente sur Character : il
+	// n'apporte plus rien a retirer, et c'est tant mieux.
 	if (bRetirerConvaiConversationnel)
 	{
 		RetirerConvaiConversationnel(Nouveau);
@@ -139,11 +143,11 @@ AActor* UAvatarSwitcherComponent::Spawner(int32 Index)
 	return AvatarCourant;
 }
 
-void UAvatarSwitcherComponent::RetirerConvaiConversationnel(AActor* Avatar) const
+int32 UAvatarSwitcherComponent::RetirerConvaiConversationnel(AActor* Avatar) const
 {
 	if (!Avatar)
 	{
-		return;
+		return 0;
 	}
 
 	// Identification par NOM de classe, et non par type : le module
@@ -181,23 +185,47 @@ void UAvatarSwitcherComponent::RetirerConvaiConversationnel(AActor* Avatar) cons
 				TEXT("Avatars : %s retire de %s — l'IA est locale"),
 				*Composant->GetClass()->GetName(), *Avatar->GetName());
 
+			// Detruire ne suffit pas : la variable Blueprint continue de
+			// pointer sur le composant mourant. L'ubergraph de
+			// BP_ConvaiCharacterBase l'interroge en boucle et chaque lecture
+			// produit une erreur d'execution — inoffensive, mais repetee
+			// toutes les 100 ms, elle noierait les vraies.
+			//
+			// On annule donc toute propriete de l'acteur qui le designe,
+			// avant de le detruire. Le noeud IsValid du Blueprint repond
+			// alors faux proprement, ce qui est exactement ce qu'il attend.
+			for (TFieldIterator<FObjectProperty> It(Avatar->GetClass()); It; ++It)
+			{
+				FObjectProperty* Propriete = *It;
+				if (Propriete->GetObjectPropertyValue_InContainer(Avatar) == Composant)
+				{
+					Propriete->SetObjectPropertyValue_InContainer(Avatar, nullptr);
+				}
+			}
+
 			Composant->DestroyComponent();
 			++NbRetires;
 			break;
 		}
 	}
 
-	// Un retrait qui ne retire rien doit se voir. La premiere version de ce
-	// code cherchait les composants trop tot et n'en trouvait aucun — sans
-	// rien dire, ce qui a coute un cycle de compilation et de test complet
-	// pour un diagnostic que cette ligne aurait donne tout de suite.
+	// Ne rien trouver est desormais le cas NOMINAL : un avatar reparente sur
+	// Character n'embarque plus de composant conversationnel. On le dit en
+	// Log, pas en Warning.
+	//
+	// La trace reste utile : c'est elle qui, un jour, revelera qu'un avatar
+	// nouvellement ajoute descend encore du God Blueprint. La premiere
+	// version de ce code n'en avait pas et cherchait les composants trop tot
+	// — elle n'en trouvait aucun, sans rien dire, ce qui a coute un cycle de
+	// compilation et de test complet.
 	if (NbRetires == 0)
 	{
-		UE_LOG(LogGardeFrontiere, Warning,
-			TEXT("Avatars : aucun composant conversationnel Convai trouve sur %s ")
-			TEXT("(%d composants inspectes) — le gel a l'arret vient d'ailleurs."),
+		UE_LOG(LogGardeFrontiere, Log,
+			TEXT("Avatars : rien de conversationnel sur %s (%d composants) — deja propre."),
 			*Avatar->GetName(), Composants.Num());
 	}
+
+	return NbRetires;
 }
 
 USkeletalMeshComponent* UAvatarSwitcherComponent::TrouverMaillageFacial() const

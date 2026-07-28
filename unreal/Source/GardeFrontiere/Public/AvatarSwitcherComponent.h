@@ -85,8 +85,8 @@ private:
 	int32 Tirer() const;
 	void DetruireCourant();
 
-	/** Detruit les composants Convai conversationnels d'un avatar. */
-	void RetirerConvaiConversationnel(AActor* Avatar) const;
+	/** Detruit les composants Convai conversationnels ; rend le nombre retire. */
+	int32 RetirerConvaiConversationnel(AActor* Avatar) const;
 
 	mutable int32 IndexPrecedent = -1;
 };
