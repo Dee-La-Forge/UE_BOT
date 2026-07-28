@@ -92,10 +92,14 @@ public:
 	/**
 	 * Delai apres le verdict avant d'inviter le visiteur a sortir.
 	 * Laisse le temps de lire le tampon.
+	 *
+	 * 7 s : valeur relevee dans l'ancien Blueprint
+	 * (Set Timer by Function Name "SwitchToExitStamp", Time = 7.0).
+	 * J'avais suppose 4 s.
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Garde Frontiere|Delais",
 		meta = (ClampMin = "0.0", Units = "s"))
-	float DelaiAvantSortie = 4.f;
+	float DelaiAvantSortie = 7.f;
 
 	/** Delai de reconnexion au sidecar apres une panne. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Garde Frontiere|Sidecar",
