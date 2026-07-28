@@ -87,6 +87,19 @@ void AGuardSessionManager::BeginPlay()
 	}
 
 	ChangerPhase(EGuardPhase::Veille);
+
+	// Un garde tient le poste avant meme le premier visiteur. Le spawn passe
+	// par Permuter() plutot que par un Spawner(0) fixe : l'agent de veille est
+	// ainsi tire au sort comme les autres, et surtout il devient l'avatar
+	// precedent — le premier visiteur en verra donc necessairement un autre.
+	//
+	// Place apres le branchement de OnAvatarChange, sans quoi le composant
+	// d'expression ne ciblerait pas le maillage facial de ce premier avatar.
+	if (bAvatarEnVeille && Avatars)
+	{
+		Avatars->Permuter();
+	}
+
 	UE_LOG(LogGardeFrontiere, Log, TEXT("Borne prete — en veille"));
 }
 

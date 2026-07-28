@@ -88,6 +88,21 @@ public:
 	// selectionne le composant "Avatars" pour regler ClassesAvatars,
 	// TransformSpawn et l'anti-repetition.
 
+	/**
+	 * Poste un garde dans la guerite des le lancement, sans attendre de
+	 * visiteur.
+	 *
+	 * Sans cela la scene reste vide en veille : l'avatar n'apparait qu'au
+	 * demarrage d'une session, et l'installation montre une guerite deserte
+	 * tant que personne ne s'est presente.
+	 *
+	 * Effet de bord souhaitable : le garde en veille compte comme avatar
+	 * precedent, donc le premier visiteur en voit forcement un autre — le
+	 * glitch masque alors une vraie substitution, et non une apparition.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Garde Frontiere|Scenographie")
+	bool bAvatarEnVeille = true;
+
 	/** Delai sans reponse du visiteur avant relance. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Garde Frontiere|Delais",
 		meta = (ClampMin = "1.0", Units = "s"))
