@@ -86,6 +86,42 @@ class Serveur:
 
     # -- Tour de parole ---------------------------------------------------
 
+    async def _jouer_intro(self, ws: ServerConnection) -> None:
+        """Fait parler l'agent des l'arrivee du visiteur.
+
+        Sans cette amorce la borne restait muette : le pipeline n'avait
+        d'entree que par l'audio du visiteur, et un visiteur ne s'adresse pas
+        spontanement a un garde-frontiere silencieux. Cote Unreal la session
+        demarrait bien, le glitch se jouait, l'avatar changeait — et personne
+        ne disait rien.
+
+        Le repli n'est tente que si RIEN n'a ete prononce. Une panne survenue
+        en cours de replique ferait sinon parler l'agent deux fois.
+        """
+        seq = 0
+        a_parle = False
+
+        try:
+            async for element in self.pipeline.intro():
+                if isinstance(element, MorceauAudio):
+                    if not a_parle:
+                        await self._envoyer(ws, "parole.debut", texte=element.texte,
+                                            emotion=self._emotion_pressentie())
+                        a_parle = True
+                    await self._envoyer_audio(ws, element, seq)
+                    seq += 1
+                else:
+                    if a_parle:
+                        await self._envoyer(ws, "parole.fin")
+                    await self._conclure(ws, element)
+
+        except Exception:
+            _log.exception("echec de l'intro")
+
+        if not a_parle:
+            _log.warning("intro muette — repli sur la replique d'accueil")
+            await self._replique_de_repli(ws, "accueil")
+
     async def _traiter_audio(self, ws: ServerConnection, brut: bytes) -> None:
         audio = np.frombuffer(brut, dtype=np.int16).astype(np.float32) / 32768.0
         if audio.size == 0:
@@ -169,6 +205,7 @@ class Serveur:
             self.pipeline.reinitialiser()
             await self._envoyer(ws, "session.demarree", avatar=self._avatar)
             _log.info("session demarree")
+            await self._jouer_intro(ws)
 
         elif evenement in ("presence.perdue", "session.reset"):
             self.pipeline.reinitialiser()

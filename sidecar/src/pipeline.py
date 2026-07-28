@@ -161,7 +161,43 @@ class Pipeline:
             )
             return
 
-        # --- 2 & 3. Generation et synthese, entrelacees ------------------
+        async for element in self._generer(texte_visiteur, m):
+            yield element
+
+    async def intro(
+        self,
+        mesure: Mesure | None = None,
+    ) -> AsyncIterator[MorceauAudio | Replique]:
+        """L'agent interpelle le visiteur des son arrivee.
+
+        Le seul tour de parole qui ne repond a rien. Tout etait deja prevu
+        pour lui — la phase INTRO de la machine a etats, la section `intro`
+        du scenario, la replique de repli `accueil` — mais rien ne l'appelait :
+        une borne ou l'agent attendait que le visiteur parle le premier, ce
+        qu'un visiteur ne fait jamais devant un garde-frontiere muet.
+
+        Dans l'ancien projet, ce role revenait au Narrative Design de Convai.
+
+        Aucune transcription ici : l'etat de la machine suffit a dire au
+        modele ce qu'on attend de lui, via _etat_courant().
+        """
+        m = mesure or Mesure()
+        m.marquer("debut")
+        m.marquer("stt_fin")   # pas de transcription : l'etape est nulle
+
+        async for element in self._generer("", m):
+            yield element
+
+    async def _generer(
+        self,
+        texte_visiteur: str,
+        m: Mesure,
+    ) -> AsyncIterator[MorceauAudio | Replique]:
+        """Generation et synthese entrelacees, communes a l'intro et aux tours.
+
+        Une entree vide est legitime : c'est l'intro. Le prompt ne portera
+        alors que le rappel d'etat, qui suffit a amorcer.
+        """
         prompt = self._construire_prompt(texte_visiteur)
         grammaire = self.etat.grammaire
         premier = True
@@ -205,7 +241,13 @@ class Pipeline:
         # --- 4. Avancement de la machine a etats -------------------------
         # Sur ACCEPTE/REFUSE, la suite — tampon puis invitation a liberer la
         # zone — est geree cote Unreal, comme elle l'a toujours ete.
-        self.historique.append((texte_visiteur, finale.texte))
+        # L'intro n'a pas de tour visiteur. On en inscrit un fictif plutot
+        # qu'une chaine vide : l'historique sert a reconstruire le prompt des
+        # tours suivants, et un tour utilisateur vide y ferait un trou que le
+        # modele interpreterait comme un silence du visiteur.
+        self.historique.append(
+            (texte_visiteur or "[Le visiteur se presente au poste.]", finale.texte)
+        )
         self.etat.avancer(finale.verdict)
 
         yield finale

@@ -156,16 +156,41 @@ void ULidarPresenceComponent::Lire()
 	AsyncTask(ENamedThreads::AnyBackgroundThreadNormalTask,
 		[Faible, Port]()
 		{
-			bool bSucces = false;
-			FString Ligne;
+			FString Derniere;
+			int32 NbLues = 0;
 
 			if (IsValid(Port))
 			{
-				Ligne = Port->Readln(bSucces);
+				// On VIDE le tampon a chaque cycle, au lieu de n'en retirer
+				// qu'une ligne.
+				//
+				// L'Arduino emet a ~90 Hz et on lit a 10 Hz : en ne consommant
+				// qu'une ligne par cycle, huit sur neuf s'entassaient dans le
+				// tampon systeme. On lisait donc des mesures de plus en plus
+				// vieilles, jusqu'a saturation et perte — un visiteur aurait
+				// ete detecte avec plusieurs secondes de retard, ou pas du tout.
+				//
+				// ReadStringUntil teste ComStat.cbInQue en entree et rend la
+				// main aussitot si rien n'attend : la boucle s'arrete d'elle-
+				// meme. Le plafond n'est qu'un garde-fou contre un capteur
+				// devenu fou.
+				bool bCoup = false;
+				FString Ligne = Port->Readln(bCoup);
+
+				while (bCoup && NbLues < 500)
+				{
+					++NbLues;
+					if (!Ligne.IsEmpty())
+					{
+						Derniere = Ligne;
+					}
+					bCoup = false;
+					Ligne = Port->Readln(bCoup);
+				}
 			}
 
 			AsyncTask(ENamedThreads::GameThread,
-				[Faible, Ligne, bSucces]()
+				[Faible, Derniere, NbLues]()
 				{
 					ULidarPresenceComponent* Comp = Faible.Get();
 					if (!Comp)
@@ -174,9 +199,10 @@ void ULidarPresenceComponent::Lire()
 					}
 					Comp->bLectureEnVol.Store(false);
 
-					if (bSucces && !Ligne.IsEmpty())
+					if (!Derniere.IsEmpty())
 					{
-						Comp->TraiterReleve(Ligne);
+						Comp->MesuresParCycle = NbLues;
+						Comp->TraiterReleve(Derniere);
 					}
 				});
 		});
@@ -234,6 +260,49 @@ void ULidarPresenceComponent::TraiterReleve(const FString& Brut)
 
 	DerniereDistanceCm = Distance;
 
+	// -- Capteur fige ----------------------------------------------------
+	//
+	// Comparaison stricte, volontairement. Un telemetre a temps de vol
+	// bruite toujours d'un centimetre ou deux, meme fixe face a un mur :
+	// une egalite parfaite repetee des centaines de fois ne peut pas etre
+	// une mesure. Une tolerance rendrait le test aveugle a ce qu'il cherche.
+	if (Distance == ValeurRepetee)
+	{
+		++CompteurIdentiques;
+
+		if (MesuresIdentiquesAvantAlerte > 0
+			&& CompteurIdentiques >= MesuresIdentiquesAvantAlerte
+			&& !bCapteurFige)
+		{
+			bCapteurFige = true;
+			UE_LOG(LogGardeFrontiere, Error,
+				TEXT("Capteur : %d mesures identiques a %d cm — capteur probablement ")
+				TEXT("fige. Reinitialiser l'Arduino, puis verifier le cablage du module."),
+				CompteurIdentiques, Distance);
+		}
+	}
+	else
+	{
+		ValeurRepetee = Distance;
+		CompteurIdentiques = 1;
+
+		// Le capteur remesure : on rearme, pour qu'un second blocage se
+		// signale aussi. Une alerte qui ne se leve qu'une fois par session
+		// ne vaut rien sur une borne qui tourne des journees entieres.
+		if (bCapteurFige)
+		{
+			bCapteurFige = false;
+			UE_LOG(LogGardeFrontiere, Log, TEXT("Capteur : mesures reparties (%d cm)"), Distance);
+		}
+	}
+
+	if (bCapteurFige && bTracerReleves && GEngine)
+	{
+		GEngine->AddOnScreenDebugMessage(CleAffichageFige, 2.f, FColor::Orange,
+			FString::Printf(TEXT("LiDAR  FIGE a %d cm depuis %d mesures — reinitialiser l'Arduino"),
+				Distance, CompteurIdentiques));
+	}
+
 	if (bTracerReleves)
 	{
 		// A l'ECRAN, a chaque mesure. Le journal ne se lit qu'apres coup :
@@ -260,9 +329,9 @@ void ULidarPresenceComponent::TraiterReleve(const FString& Brut)
 		{
 			DerniereTrace = Maintenant;
 			UE_LOG(LogGardeFrontiere, Log,
-				TEXT("Capteur : %d cm (seuil %d, sortie %d) — %s"),
+				TEXT("Capteur : %d cm (seuil %d, sortie %d) — %s [%d mesures/cycle]"),
 				Distance, SeuilPresenceCm, SeuilPresenceCm + HysteresisCm,
-				bPresent ? TEXT("present") : TEXT("personne"));
+				bPresent ? TEXT("present") : TEXT("personne"), MesuresParCycle);
 		}
 	}
 

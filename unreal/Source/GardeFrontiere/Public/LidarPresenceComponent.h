@@ -133,6 +133,31 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Capteur|Diagnostic")
 	bool bTracerReleves = true;
 
+	/**
+	 * Mesures rigoureusement identiques avant de conclure a un capteur fige.
+	 *
+	 * Un telemetre a temps de vol bruite toujours d'un ou deux centimetres,
+	 * meme immobile face a un mur. Une valeur constante au centimetre pres,
+	 * repetee des centaines de fois, n'est donc pas une mesure : c'est un
+	 * module qui a cesse de repondre et dont le sketch reemet sa derniere
+	 * valeur connue.
+	 *
+	 * C'est arrive le 28/07/2026 : 3061 releves a 174 cm sans un ecart, alors
+	 * que le capteur avait fonctionne six minutes plus tot. Un reset de
+	 * l'Arduino a suffi. Rien ne le signalait — un capteur mort et un couloir
+	 * vide produisent la meme trace, et une borne en exposition serait restee
+	 * en veille indefiniment sans que personne ne s'en apercoive.
+	 *
+	 * 300 a 10 Hz, soit trente secondes. Mettre 0 pour desactiver.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Capteur|Diagnostic",
+		meta = (ClampMin = "0"))
+	int32 MesuresIdentiquesAvantAlerte = 300;
+
+	/** Vrai quand le capteur est soupconne fige. Repasse a faux des qu'il varie. */
+	UPROPERTY(BlueprintReadOnly, Category = "Capteur|Etat")
+	bool bCapteurFige = false;
+
 protected:
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type Raison) override;
@@ -161,6 +186,19 @@ private:
 	double DerniereTrace = 0.0;
 
 	/**
+	 * Mesures retirees du tampon au dernier cycle.
+	 *
+	 * Doit rester proche de PeriodeLecture x cadence de l'Arduino — environ
+	 * neuf a 90 Hz et 10 Hz de lecture. Une valeur qui grimpe signale qu'on
+	 * n'arrive plus a vider le tampon aussi vite qu'il se remplit.
+	 */
+	int32 MesuresParCycle = 0;
+
+	/** Detection du capteur fige : valeur repetee et nombre de repetitions. */
+	int32 ValeurRepetee = -1;
+	int32 CompteurIdentiques = 0;
+
+	/**
 	 * Cles d'affichage a l'ecran.
 	 *
 	 * Fixes et distinctes : chaque message se remplace au lieu de s'empiler,
@@ -168,6 +206,7 @@ private:
 	 */
 	static constexpr uint64 CleAffichageCapteur = 8801;
 	static constexpr uint64 CleAffichageLiaison = 8802;
+	static constexpr uint64 CleAffichageFige    = 8803;
 
 	/**
 	 * Une lecture est en vol sur un thread de fond.
