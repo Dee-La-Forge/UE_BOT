@@ -39,6 +39,24 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Avatars")
 	bool bEviterRepetition = true;
 
+	/**
+	 * Retire du MetaHuman les composants conversationnels de Convai.
+	 *
+	 * BP_AgentGermain descend de BP_ConvaiCharacterBase et herite donc d'un
+	 * ConvaiChatbotComponent. Sa seule presence suffit a reveiller toute la
+	 * pile Convai : le ConvaiPlayerComponent du pion joueur ouvre le micro,
+	 * Silero demarre, et une session gRPC part vers les serveurs Convai —
+	 * alors que l'IA est desormais locale.
+	 *
+	 * A l'arret, ce trio se bloque apres StopAudioStream et gele l'editeur.
+	 *
+	 * ConvaiFaceSync et les AnimBP Convai_MetaHuman_FaceAnim / BodyAnim ne
+	 * sont pas touches : ce sont les animations, la raison pour laquelle le
+	 * plugin est conserve.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Avatars")
+	bool bRetirerConvaiConversationnel = true;
+
 	UPROPERTY(BlueprintReadOnly, Category = "Avatars")
 	TObjectPtr<AActor> AvatarCourant;
 
@@ -66,6 +84,9 @@ protected:
 private:
 	int32 Tirer() const;
 	void DetruireCourant();
+
+	/** Detruit les composants Convai conversationnels d'un avatar. */
+	void RetirerConvaiConversationnel(AActor* Avatar) const;
 
 	mutable int32 IndexPrecedent = -1;
 };

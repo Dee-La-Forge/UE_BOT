@@ -1,6 +1,8 @@
 #include "AvatarSwitcherComponent.h"
 
 #include "GardeFrontiere.h"
+#include "Algo/Find.h"
+#include "Components/ActorComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Engine/World.h"
 #include "GameFramework/Actor.h"
@@ -99,18 +101,38 @@ AActor* UAvatarSwitcherComponent::Spawner(int32 Index)
 
 	DetruireCourant();
 
-	FActorSpawnParameters Params;
-	Params.SpawnCollisionHandlingOverride =
-		ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	// Spawn DIFFERE, et non immediat : les composants conversationnels de
+	// Convai doivent disparaitre avant BeginPlay. Passe ce point, le micro
+	// est ouvert et la session gRPC lancee — les retirer ensuite ne defait
+	// plus rien.
+	AActor* Nouveau = Monde->SpawnActorDeferred<AActor>(
+		ClassesAvatars[Index], TransformSpawn, nullptr, nullptr,
+		ESpawnActorCollisionHandlingMethod::AlwaysSpawn);
 
-	AvatarCourant = Monde->SpawnActor<AActor>(
-		ClassesAvatars[Index], TransformSpawn, Params);
-
-	if (!AvatarCourant)
+	if (!Nouveau)
 	{
 		UE_LOG(LogGardeFrontiere, Error, TEXT("Avatars : echec du spawn (index %d)"), Index);
 		return nullptr;
 	}
+
+	if (bRetirerConvaiConversationnel)
+	{
+		RetirerConvaiConversationnel(Nouveau);
+	}
+
+	Nouveau->FinishSpawning(TransformSpawn);
+
+	// FinishSpawning execute le construction script et BeginPlay : un avatar
+	// peut s'y detruire lui-meme. Sans ce controle, on publierait un pointeur
+	// invalide au composant d'expression.
+	if (!IsValid(Nouveau))
+	{
+		UE_LOG(LogGardeFrontiere, Error,
+			TEXT("Avatars : l'avatar (index %d) s'est detruit pendant FinishSpawning"), Index);
+		return nullptr;
+	}
+
+	AvatarCourant = Nouveau;
 
 	IndexCourant = Index;
 	UE_LOG(LogGardeFrontiere, Log, TEXT("Avatars : %s en place (index %d)"),
@@ -118,6 +140,52 @@ AActor* UAvatarSwitcherComponent::Spawner(int32 Index)
 
 	OnAvatarChange.Broadcast(AvatarCourant, Index);
 	return AvatarCourant;
+}
+
+void UAvatarSwitcherComponent::RetirerConvaiConversationnel(AActor* Avatar) const
+{
+	if (!Avatar)
+	{
+		return;
+	}
+
+	// Identification par NOM de classe, et non par type : le module
+	// GardeFrontiere ne depend pas de Convai et n'a pas a en dependre. Le
+	// plugin n'est garde que pour ses animations et doit pouvoir disparaitre
+	// sans qu'une ligne d'ici ne bouge — un include suffirait a rendre la
+	// compilation impossible le jour ou on le retire.
+	static const FName Conversationnels[] =
+	{
+		TEXT("ConvaiChatbotComponent"),
+	};
+
+	TArray<UActorComponent*> Composants;
+	Avatar->GetComponents(Composants);
+
+	for (UActorComponent* Composant : Composants)
+	{
+		if (!Composant)
+		{
+			continue;
+		}
+
+		// On remonte la hierarchie : un Blueprint peut deriver du composant
+		// Convai plutot que l'utiliser tel quel, et le nom exact changerait.
+		for (const UClass* Classe = Composant->GetClass(); Classe; Classe = Classe->GetSuperClass())
+		{
+			if (Algo::Find(Conversationnels, Classe->GetFName()) == nullptr)
+			{
+				continue;
+			}
+
+			UE_LOG(LogGardeFrontiere, Log,
+				TEXT("Avatars : %s retire de %s — l'IA est locale"),
+				*Composant->GetClass()->GetName(), *Avatar->GetName());
+
+			Composant->DestroyComponent();
+			break;
+		}
+	}
 }
 
 USkeletalMeshComponent* UAvatarSwitcherComponent::TrouverMaillageFacial() const
