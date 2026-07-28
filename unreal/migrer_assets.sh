@@ -51,6 +51,36 @@ copier "Content/BP_ConvaiCharacterBase.uasset" "Content/BP_ConvaiCharacterBase.u
 copier "Content/BP_AutoGainComponent.uasset"   "Content/BP_AutoGainComponent.uasset"
 
 echo ""
+echo "=== 5/5  Contournement du build Convai ==="
+cat <<'POURQUOI'
+  UBT ne planifie pas le module runtime Convai, alors qu'il en reclame la
+  bibliotheque a l'edition de liens. Cause non identifiee apres huit
+  tentatives. On fournit donc a la main ce qu'il refuse de produire, en
+  le reprenant de l'archive — ou le module avait ete compile pour la 5.7.
+
+  On ne reprend QUE ces fichiers. Un Intermediate complet n'est pas
+  transportable : ses .rsp portent des chemins absolus vers l'ancien
+  emplacement du projet.
+POURQUOI
+
+LIB="Intermediate/Build/Win64/x64/UnrealEditor/Development/Convai"
+INC="Intermediate/Build/Win64/UnrealEditor/Inc/Convai"
+
+# En-tetes generes par UHT, que UHT ne regenere jamais pour ce module
+copier "Plugins/Convai/$INC" "Plugins/Convai/$INC"
+
+# DLL et bibliotheque d'import (les .pdb, 148 Mo de symboles, sont inutiles)
+mkdir -p "$NOUVEAU/Plugins/Convai/Binaries/Win64" "$NOUVEAU/Plugins/Convai/$LIB"
+for f in UnrealEditor-Convai.dll UnrealEditor-ConvaiEditor.dll UnrealEditor.modules; do
+  src="$ANCIEN/Plugins/Convai/Binaries/Win64/$f"
+  [ -f "$src" ] && cp "$src" "$NOUVEAU/Plugins/Convai/Binaries/Win64/" && echo "  ok  $f"
+done
+for e in lib exp; do
+  src="$ANCIEN/Plugins/Convai/$LIB/UnrealEditor-Convai.$e"
+  [ -f "$src" ] && cp "$src" "$NOUVEAU/Plugins/Convai/$LIB/" && echo "  ok  UnrealEditor-Convai.$e"
+done
+
+echo ""
 echo "=== NON MIGRE (volontairement) ==="
 cat <<'NOTE'
   AgentGrondin, AgentSmith   aucun Character ID, aucune reference
