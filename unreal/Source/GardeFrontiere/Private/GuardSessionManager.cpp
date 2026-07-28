@@ -50,12 +50,25 @@ void AGuardSessionManager::BeginPlay()
 			}
 		});
 
-	Sidecar->Connecter(UrlSidecar);
+	if (bActiverSidecar)
+	{
+		Sidecar->Connecter(UrlSidecar);
+	}
+	else
+	{
+		UE_LOG(LogGardeFrontiere, Warning, TEXT("DIAGNOSTIC : sidecar desactive"));
+	}
 
 	if (Presence)
 	{
 		Presence->OnPresenceDetectee.AddDynamic(this, &AGuardSessionManager::SurPresenceDetectee);
 		Presence->OnPresencePerdue.AddDynamic(this, &AGuardSessionManager::SurPresencePerdue);
+		Presence->SetActive(bActiverCapteur);
+
+		if (!bActiverCapteur)
+		{
+			UE_LOG(LogGardeFrontiere, Warning, TEXT("DIAGNOSTIC : capteur desactive"));
+		}
 	}
 
 	// Le glitch masque la substitution : on ne permute qu'une fois l'effet

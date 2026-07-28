@@ -13,7 +13,18 @@ ULidarPresenceComponent::ULidarPresenceComponent()
 void ULidarPresenceComponent::BeginPlay()
 {
 	Super::BeginPlay();
-	OuvrirPort();
+
+	// Le gestionnaire peut desactiver le composant a des fins de
+	// diagnostic : on n'ouvre alors aucun port.
+	if (IsActive())
+	{
+		OuvrirPort();
+	}
+	else
+	{
+		UE_LOG(LogGardeFrontiere, Warning,
+			TEXT("Capteur : composant inactif, port non ouvert"));
+	}
 }
 
 void ULidarPresenceComponent::EndPlay(const EEndPlayReason::Type Raison)

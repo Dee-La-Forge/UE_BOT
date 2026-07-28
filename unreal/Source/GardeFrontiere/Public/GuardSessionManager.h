@@ -64,6 +64,22 @@ public:
 	// Configuration — tout ce qui etait code en dur dans l'ancien projet
 	// =====================================================================
 
+	// =====================================================================
+	// Interrupteurs de diagnostic
+	//
+	// Deux sous-systemes touchent a des ressources exterieures au moteur :
+	// un port serie et une socket reseau. Les desactiver separement permet
+	// d'isoler un blocage en deux essais, au lieu de le deviner.
+	// =====================================================================
+
+	/** Decocher pour demarrer sans ouvrir le port serie du capteur. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Garde Frontiere|Diagnostic")
+	bool bActiverCapteur = true;
+
+	/** Decocher pour demarrer sans se connecter au sidecar. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Garde Frontiere|Diagnostic")
+	bool bActiverSidecar = true;
+
 	/** Adresse du sidecar IA. Modifiable sans recompiler. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Garde Frontiere|Sidecar")
 	FString UrlSidecar = TEXT("ws://127.0.0.1:8765");
