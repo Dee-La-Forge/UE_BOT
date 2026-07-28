@@ -6,7 +6,7 @@
 # d'eclairage). Idempotent : relancable sans dommage.
 
 set -u
-ANCIEN="/c/Users/expo/Desktop/GardeFrontiere by Dboy/GardeFrontiereByDboy"
+ANCIEN="/d/Archives/GardeFrontiereByDboy"
 NOUVEAU="$(cd "$(dirname "$0")" && pwd)"
 
 copier() {

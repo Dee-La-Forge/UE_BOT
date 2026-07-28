@@ -16,6 +16,11 @@
 			"Enabled": true
 		},
 		{
+			"_comment": "Conserve pour ses animations MetaHuman : AnimBP corps et visage, 25 poses de visemes MHF_*, 16 poses d'emotions, suivi du regard. La couche reseau, elle, est remplacee par le sidecar local.",
+			"Name": "ConvAI",
+			"Enabled": true
+		},
+		{
 			"Name": "LiveLink",
 			"Enabled": true
 		},
