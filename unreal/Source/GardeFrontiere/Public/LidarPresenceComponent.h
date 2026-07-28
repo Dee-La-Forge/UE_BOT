@@ -161,6 +161,15 @@ private:
 	double DerniereTrace = 0.0;
 
 	/**
+	 * Cles d'affichage a l'ecran.
+	 *
+	 * Fixes et distinctes : chaque message se remplace au lieu de s'empiler,
+	 * et la mesure ne chasse pas l'avertissement de liaison.
+	 */
+	static constexpr uint64 CleAffichageCapteur = 8801;
+	static constexpr uint64 CleAffichageLiaison = 8802;
+
+	/**
 	 * Une lecture est en vol sur un thread de fond.
 	 *
 	 * USerialCom::ReadStringUntil contient un WaitForSingleObject de

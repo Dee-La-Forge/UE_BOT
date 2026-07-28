@@ -80,6 +80,18 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Garde Frontiere|Diagnostic")
 	bool bActiverSidecar = true;
 
+	/**
+	 * Affiche la phase courante a l'ecran, en jeu.
+	 *
+	 * Le journal ne se lit qu'apres coup. Debout devant la borne, on ne sait
+	 * pas distinguer une detection qui n'aboutit pas d'une detection qui n'a
+	 * pas eu lieu — les deux se ressemblent trait pour trait.
+	 *
+	 * A decocher avant la mise en service.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Garde Frontiere|Diagnostic")
+	bool bAfficherEtatEcran = true;
+
 	/** Adresse du sidecar IA. Modifiable sans recompiler. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Garde Frontiere|Sidecar")
 	FString UrlSidecar = TEXT("ws://127.0.0.1:8765");
@@ -253,4 +265,7 @@ private:
 	FTimerHandle MinuterieAbandon;
 	FTimerHandle MinuterieSortie;
 	FTimerHandle MinuterieReconnexion;
+
+	/** Distincte des cles du capteur, pour que les deux messages coexistent. */
+	static constexpr uint64 CleAffichagePhase = 8810;
 };

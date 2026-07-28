@@ -3,6 +3,7 @@
 #include "GardeFrontiere.h"
 #include "SerialCom.h"
 #include "TimerManager.h"
+#include "Engine/Engine.h"
 #include "Engine/World.h"
 #include "Async/Async.h"
 
@@ -206,6 +207,16 @@ void ULidarPresenceComponent::TraiterReleve(const FString& Brut)
 				TEXT("probablement incorrecte (%d bauds configures). Dernier echantillon : '%s'"),
 				CompteurRejets, PortCOM, VitesseBauds, *DernierRejet);
 		}
+
+		// A l'ecran aussi, sinon l'absence de mesure serait muette : un
+		// capteur illisible n'affiche rien, exactement comme un capteur
+		// deconnecte ou un composant desactive.
+		if (bTracerReleves && CompteurRejets >= 50 && GEngine)
+		{
+			GEngine->AddOnScreenDebugMessage(CleAffichageLiaison, 2.f, FColor::Red,
+				FString::Printf(TEXT("LiDAR  COM%d a %d bauds : %d trames illisibles — verifier la vitesse"),
+					PortCOM, VitesseBauds, CompteurRejets));
+		}
 		return;
 	}
 
@@ -225,8 +236,25 @@ void ULidarPresenceComponent::TraiterReleve(const FString& Brut)
 
 	if (bTracerReleves)
 	{
-		// Une ligne par seconde au plus : a 10 Hz, tout tracer noierait le
-		// journal sans rien apprendre de plus.
+		// A l'ECRAN, a chaque mesure. Le journal ne se lit qu'apres coup :
+		// debout devant le capteur, on ne peut pas etre a la fois le visiteur
+		// et le lecteur du fichier. Sans ce retour immediat, un capteur qui
+		// ne voit rien et une suite de traitement bloquee sont indiscernables.
+		//
+		// La cle fixe fait que le message se REMPLACE au lieu de s'empiler.
+		if (GEngine)
+		{
+			GEngine->AddOnScreenDebugMessage(CleAffichageCapteur, 1.5f,
+				bPresent ? FColor::Green : FColor::Silver,
+				FString::Printf(TEXT("LiDAR  %4d cm    entree %d / sortie %d    %s  [%d/%d]"),
+					Distance, SeuilPresenceCm, SeuilPresenceCm + HysteresisCm,
+					bPresent ? TEXT("PRESENT") : TEXT("personne"),
+					bPresent ? CompteurLoin : CompteurProche,
+					bPresent ? ReleveseAvantAbsence : ReleveseAvantPresence));
+		}
+
+		// Dans le JOURNAL, une ligne par seconde au plus : a 10 Hz, tout
+		// tracer noierait le fichier sans rien apprendre de plus.
 		const double Maintenant = FPlatformTime::Seconds();
 		if (Maintenant - DerniereTrace >= 1.0)
 		{

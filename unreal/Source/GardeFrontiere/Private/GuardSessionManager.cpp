@@ -10,6 +10,7 @@
 #include "StampComponent.h"
 #include "AudioBridge.h"
 #include "TimerManager.h"
+#include "Engine/Engine.h"
 #include "Engine/World.h"
 
 AGuardSessionManager::AGuardSessionManager()
@@ -154,6 +155,17 @@ void AGuardSessionManager::ChangerPhase(EGuardPhase Nouvelle)
 	UE_LOG(LogGardeFrontiere, Log, TEXT("Phase : %s -> %s"),
 		*Enum->GetDisplayNameTextByValue((int64)Phase).ToString(),
 		*Enum->GetDisplayNameTextByValue((int64)Nouvelle).ToString());
+
+	// A l'ecran : savoir que le capteur a vu quelqu'un ne suffit pas, encore
+	// faut-il voir si la machine a etats a suivi. Sans cet affichage, une
+	// detection qui n'aboutit pas et une detection qui n'a pas eu lieu se
+	// ressemblent trait pour trait.
+	if (bAfficherEtatEcran && GEngine)
+	{
+		GEngine->AddOnScreenDebugMessage(CleAffichagePhase, 6.f, FColor::Cyan,
+			FString::Printf(TEXT("Phase  %s"),
+				*Enum->GetDisplayNameTextByValue((int64)Nouvelle).ToString()));
+	}
 
 	Phase = Nouvelle;
 	OnPhaseChangee.Broadcast(Nouvelle);
