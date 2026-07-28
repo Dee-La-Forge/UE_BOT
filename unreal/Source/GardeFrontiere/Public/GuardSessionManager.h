@@ -68,20 +68,9 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Garde Frontiere|Sidecar")
 	FString UrlSidecar = TEXT("ws://127.0.0.1:8765");
 
-	/** Nombre d'avatars en rotation (Germain, Louise, Trinity). */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Garde Frontiere|Avatars",
-		meta = (ClampMin = "1"))
-	int32 NombreAvatars = 3;
-
-	/**
-	 * Interdit de retirer deux fois de suite le meme avatar.
-	 *
-	 * Un tirage purement aleatoire redonne le meme visage une fois sur
-	 * trois — ce qui, pour deux visiteurs successifs, se remarque et casse
-	 * l'illusion du changement.
-	 */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Garde Frontiere|Avatars")
-	bool bEviterRepetitionAvatar = true;
+	// La rotation d'avatars appartient a UAvatarSwitcherComponent :
+	// selectionne le composant "Avatars" pour regler ClassesAvatars,
+	// TransformSpawn et l'anti-repetition.
 
 	/** Delai sans reponse du visiteur avant relance. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Garde Frontiere|Delais",
@@ -207,7 +196,6 @@ protected:
 
 private:
 	void ChangerPhase(EGuardPhase Nouvelle);
-	int32 TirerAvatar();
 
 	// Reactions au capteur de presence
 	UFUNCTION() void SurPresenceDetectee();
@@ -234,7 +222,4 @@ private:
 	FTimerHandle MinuterieAbandon;
 	FTimerHandle MinuterieSortie;
 	FTimerHandle MinuterieReconnexion;
-
-	/** Evite de retirer le meme avatar deux sessions de suite. */
-	int32 IndexAvatarPrecedent = -1;
 };

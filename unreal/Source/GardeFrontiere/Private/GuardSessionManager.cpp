@@ -105,26 +105,6 @@ void AGuardSessionManager::ChangerPhase(EGuardPhase Nouvelle)
 	OnPhaseChangee.Broadcast(Nouvelle);
 }
 
-int32 AGuardSessionManager::TirerAvatar()
-{
-	if (NombreAvatars <= 1)
-	{
-		return 0;
-	}
-
-	int32 Index = FMath::RandRange(0, NombreAvatars - 1);
-
-	// Sans cette precaution, le meme visage revient une fois sur trois —
-	// assez pour que deux visiteurs successifs le remarquent.
-	if (bEviterRepetitionAvatar && Index == IndexAvatarPrecedent)
-	{
-		Index = (Index + 1 + FMath::RandRange(0, NombreAvatars - 2)) % NombreAvatars;
-	}
-
-	IndexAvatarPrecedent = Index;
-	return Index;
-}
-
 void AGuardSessionManager::DemarrerSession()
 {
 	if (Phase != EGuardPhase::Veille)
@@ -135,8 +115,9 @@ void AGuardSessionManager::DemarrerSession()
 	}
 
 	DernierVerdict = EGuardVerdict::EnCours;
-	IndexAvatarCourant = TirerAvatar();
 
+	// L'index reel est renseigne par SurAvatarChange, une fois la
+	// permutation faite par UAvatarSwitcherComponent.
 	ChangerPhase(EGuardPhase::Accueil);
 
 	if (Tampons)
