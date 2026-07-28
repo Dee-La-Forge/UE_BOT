@@ -139,10 +139,52 @@ void USidecarClient::TraiterMessage(const FString& Message)
 	}
 	else if (Evenement == TEXT("parole.audio"))
 	{
-		// Ce descripteur precede la trame binaire : on retient son taux.
+		// Ce descripteur precede la trame binaire : on retient son taux et
+		// sa frise de visemes, pour les diffuser AVEC l'audio qu'ils
+		// decrivent. Les separer les desynchroniserait au premier hoquet.
 		if (Json->HasTypedField<EJson::Number>(TEXT("taux")))
 		{
 			TauxAudioAttendu = Json->GetIntegerField(TEXT("taux"));
+		}
+
+		VisemesAttendus.Reset();
+
+		const TArray<TSharedPtr<FJsonValue>>* Frise = nullptr;
+		if (Json->TryGetArrayField(TEXT("visemes"), Frise) && Frise)
+		{
+			VisemesAttendus.Reserve(Frise->Num());
+
+			for (const TSharedPtr<FJsonValue>& Element : *Frise)
+			{
+				const TSharedPtr<FJsonObject>* Objet = nullptr;
+				if (!Element.IsValid() || !Element->TryGetObject(Objet) || !Objet)
+				{
+					continue;
+				}
+
+				FString Pose;
+				double Debut = 0.0;
+				double Fin = 0.0;
+
+				if (!(*Objet)->TryGetStringField(TEXT("pose"), Pose) || Pose.IsEmpty())
+				{
+					continue;
+				}
+				(*Objet)->TryGetNumberField(TEXT("debut"), Debut);
+				(*Objet)->TryGetNumberField(TEXT("fin"), Fin);
+
+				// Une pose de duree nulle ou negative ne s'ouvrirait jamais.
+				if (Fin <= Debut)
+				{
+					continue;
+				}
+
+				FGuardViseme V;
+				V.Pose = FName(*Pose);
+				V.Debut = static_cast<float>(Debut);
+				V.Fin = static_cast<float>(Fin);
+				VisemesAttendus.Add(V);
+			}
 		}
 	}
 	else if (Evenement == TEXT("parole.fin"))
@@ -182,8 +224,13 @@ void USidecarClient::TraiterBinaire(const TArray<uint8>& Donnees)
 {
 	if (Donnees.Num() > 0)
 	{
-		OnAudioRecu.Broadcast(Donnees, TauxAudioAttendu);
+		OnAudioRecu.Broadcast(Donnees, TauxAudioAttendu, VisemesAttendus);
 	}
+
+	// Consommee ou non, la frise ne vaut que pour la trame qu'elle annonce.
+	// La garder ferait rejouer les memes poses sur l'audio suivant si un
+	// descripteur arrivait sans visemes.
+	VisemesAttendus.Reset();
 }
 
 // -- Cycle de vie de la connexion ----------------------------------------

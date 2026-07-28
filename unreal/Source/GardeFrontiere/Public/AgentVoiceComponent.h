@@ -45,6 +45,16 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Garde Frontiere|Voix")
 	void Interrompre();
 
+	/**
+	 * Secondes d'audio deja empilees mais pas encore jouees.
+	 *
+	 * C'est le retard de la file. Une trame remise maintenant ne se fera
+	 * entendre que dans ce delai — et sa frise de visemes doit etre decalee
+	 * d'autant, sinon la bouche bouge avant la voix.
+	 */
+	UFUNCTION(BlueprintPure, Category = "Garde Frontiere|Voix")
+	float DureeEnAttente() const;
+
 	UFUNCTION(BlueprintPure, Category = "Garde Frontiere|Voix")
 	bool EstEnTrainDeParler() const { return bParle; }
 

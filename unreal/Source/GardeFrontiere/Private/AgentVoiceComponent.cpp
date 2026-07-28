@@ -100,6 +100,17 @@ int32 UAgentVoiceComponent::OctetsEnAttente() const
 	return Flux ? Flux->GetAvailableAudioByteCount() : 0;
 }
 
+float UAgentVoiceComponent::DureeEnAttente() const
+{
+	if (TauxCourant <= 0)
+	{
+		return 0.f;
+	}
+
+	// PCM16 mono : deux octets par echantillon.
+	return static_cast<float>(OctetsEnAttente()) / (TauxCourant * 2.f);
+}
+
 void UAgentVoiceComponent::TickComponent(
 	float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
 {

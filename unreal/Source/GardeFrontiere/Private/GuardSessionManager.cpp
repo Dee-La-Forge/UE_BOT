@@ -43,11 +43,24 @@ void AGuardSessionManager::BeginPlay()
 	// Blueprint : trop volumineuses pour y transiter. On les route
 	// directement vers la voix.
 	Sidecar->OnAudioRecu.AddLambda(
-		[this](const TArray<uint8>& PCM16, int32 Taux)
+		[this](const TArray<uint8>& PCM16, int32 Taux, const TArray<FGuardViseme>& Visemes)
 		{
-			if (Voix)
+			if (!Voix)
 			{
-				Voix->EmpilerTrame(PCM16, Taux);
+				return;
+			}
+
+			// Le retard de la file se mesure AVANT d'empiler : c'est le delai
+			// au bout duquel cette trame se fera entendre, et donc celui dont
+			// il faut decaler sa frise. Mesure apres, il inclurait la trame
+			// elle-meme et la bouche aurait une phrase de retard.
+			const float Retard = Voix->DureeEnAttente();
+
+			Voix->EmpilerTrame(PCM16, Taux);
+
+			if (Visage)
+			{
+				Visage->PlanifierVisemes(Visemes, Retard);
 			}
 		});
 
