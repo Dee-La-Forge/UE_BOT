@@ -101,13 +101,12 @@ AActor* UAvatarSwitcherComponent::Spawner(int32 Index)
 
 	DetruireCourant();
 
-	// Spawn DIFFERE, et non immediat : les composants conversationnels de
-	// Convai doivent disparaitre avant BeginPlay. Passe ce point, le micro
-	// est ouvert et la session gRPC lancee — les retirer ensuite ne defait
-	// plus rien.
-	AActor* Nouveau = Monde->SpawnActorDeferred<AActor>(
-		ClassesAvatars[Index], TransformSpawn, nullptr, nullptr,
-		ESpawnActorCollisionHandlingMethod::AlwaysSpawn);
+	FActorSpawnParameters Params;
+	Params.SpawnCollisionHandlingOverride =
+		ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+
+	AActor* Nouveau = Monde->SpawnActor<AActor>(
+		ClassesAvatars[Index], TransformSpawn, Params);
 
 	if (!Nouveau)
 	{
@@ -115,21 +114,19 @@ AActor* UAvatarSwitcherComponent::Spawner(int32 Index)
 		return nullptr;
 	}
 
+	// Le retrait se fait APRES le spawn, et non entre SpawnActorDeferred et
+	// FinishSpawning comme je l'avais d'abord ecrit : les composants d'un
+	// Blueprint naissent dans le Simple Construction Script, execute par
+	// FinishSpawning. Avant lui, seuls les composants natifs existent — et
+	// ConvaiChatbot n'en est pas un. Il n'y a donc pas de fenetre avant
+	// BeginPlay, et le chercher la revenait a ne rien trouver.
+	//
+	// La capture micro ne demarre qu'a la frame suivante — 40 ms apres le
+	// spawn dans les traces. Detruire le composant ici, dans la meme pile
+	// d'appels, la devance.
 	if (bRetirerConvaiConversationnel)
 	{
 		RetirerConvaiConversationnel(Nouveau);
-	}
-
-	Nouveau->FinishSpawning(TransformSpawn);
-
-	// FinishSpawning execute le construction script et BeginPlay : un avatar
-	// peut s'y detruire lui-meme. Sans ce controle, on publierait un pointeur
-	// invalide au composant d'expression.
-	if (!IsValid(Nouveau))
-	{
-		UE_LOG(LogGardeFrontiere, Error,
-			TEXT("Avatars : l'avatar (index %d) s'est detruit pendant FinishSpawning"), Index);
-		return nullptr;
 	}
 
 	AvatarCourant = Nouveau;
@@ -162,6 +159,8 @@ void UAvatarSwitcherComponent::RetirerConvaiConversationnel(AActor* Avatar) cons
 	TArray<UActorComponent*> Composants;
 	Avatar->GetComponents(Composants);
 
+	int32 NbRetires = 0;
+
 	for (UActorComponent* Composant : Composants)
 	{
 		if (!Composant)
@@ -183,8 +182,21 @@ void UAvatarSwitcherComponent::RetirerConvaiConversationnel(AActor* Avatar) cons
 				*Composant->GetClass()->GetName(), *Avatar->GetName());
 
 			Composant->DestroyComponent();
+			++NbRetires;
 			break;
 		}
+	}
+
+	// Un retrait qui ne retire rien doit se voir. La premiere version de ce
+	// code cherchait les composants trop tot et n'en trouvait aucun — sans
+	// rien dire, ce qui a coute un cycle de compilation et de test complet
+	// pour un diagnostic que cette ligne aurait donne tout de suite.
+	if (NbRetires == 0)
+	{
+		UE_LOG(LogGardeFrontiere, Warning,
+			TEXT("Avatars : aucun composant conversationnel Convai trouve sur %s ")
+			TEXT("(%d composants inspectes) — le gel a l'arret vient d'ailleurs."),
+			*Avatar->GetName(), Composants.Num());
 	}
 }
 
