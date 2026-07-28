@@ -88,3 +88,6 @@ benchmarks/*.json
 Thumbs.db
 desktop.ini
 .DS_Store
+
+# Echantillons de test : regeneres par bench/generer_echantillons.py
+sidecar/bench/echantillons/
