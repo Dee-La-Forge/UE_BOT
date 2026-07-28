@@ -4,6 +4,10 @@
 #include "SidecarClient.h"
 #include "LidarPresenceComponent.h"
 #include "AgentVoiceComponent.h"
+#include "AgentFaceComponent.h"
+#include "GlitchComponent.h"
+#include "AvatarSwitcherComponent.h"
+#include "StampComponent.h"
 #include "AudioBridge.h"
 #include "TimerManager.h"
 #include "Engine/World.h"
@@ -16,6 +20,11 @@ AGuardSessionManager::AGuardSessionManager()
 
 	Voix = CreateDefaultSubobject<UAgentVoiceComponent>(TEXT("Voix"));
 	Voix->SetupAttachment(RootComponent);
+
+	Visage  = CreateDefaultSubobject<UAgentFaceComponent>(TEXT("Visage"));
+	Glitch  = CreateDefaultSubobject<UGlitchComponent>(TEXT("Glitch"));
+	Avatars = CreateDefaultSubobject<UAvatarSwitcherComponent>(TEXT("Avatars"));
+	Tampons = CreateDefaultSubobject<UStampComponent>(TEXT("Tampons"));
 }
 
 void AGuardSessionManager::BeginPlay()
@@ -47,6 +56,21 @@ void AGuardSessionManager::BeginPlay()
 	{
 		Presence->OnPresenceDetectee.AddDynamic(this, &AGuardSessionManager::SurPresenceDetectee);
 		Presence->OnPresencePerdue.AddDynamic(this, &AGuardSessionManager::SurPresencePerdue);
+	}
+
+	// Le glitch masque la substitution : on ne permute qu'une fois l'effet
+	// installe, sinon le visiteur verrait l'avatar disparaitre puis
+	// reapparaitre a l'ecran.
+	if (Glitch)
+	{
+		Glitch->OnGlitchTermine.AddDynamic(this, &AGuardSessionManager::SurGlitchTermine);
+	}
+
+	// A chaque nouvel avatar, le composant d'expression doit recibler le
+	// maillage facial : l'ancien vient d'etre detruit.
+	if (Avatars)
+	{
+		Avatars->OnAvatarChange.AddDynamic(this, &AGuardSessionManager::SurAvatarChange);
 	}
 
 	ChangerPhase(EGuardPhase::Veille);
@@ -115,8 +139,23 @@ void AGuardSessionManager::DemarrerSession()
 
 	ChangerPhase(EGuardPhase::Accueil);
 
-	// Le Blueprint enchaine ici glitch + changement d'avatar. Le glitch a un
-	// role precis : masquer la substitution du MetaHuman.
+	if (Tampons)
+	{
+		Tampons->Masquer();
+	}
+
+	// Le glitch masque la substitution. La permutation elle-meme attend
+	// OnGlitchTermine — a defaut d'effet, on permute tout de suite plutot
+	// que de rester bloque.
+	if (Glitch)
+	{
+		Glitch->Declencher();
+	}
+	else if (Avatars)
+	{
+		Avatars->Permuter();
+	}
+
 	OnSessionDemarree.Broadcast(IndexAvatarCourant);
 
 	if (Sidecar && Sidecar->EstConnecte())
@@ -173,10 +212,13 @@ void AGuardSessionManager::TerminerSession(EGuardFinDeSession Raison)
 	}
 
 	AnnulerMinuteries();
-	if (Voix)
-	{
-		Voix->Interrompre();   // on ne laisse pas l'agent parler dans le vide
-	}
+
+	// On ne laisse ni l'agent parler dans le vide, ni un tampon ou un
+	// effet rester affiche apres le depart du visiteur.
+	if (Voix)    { Voix->Interrompre(); }
+	if (Tampons) { Tampons->Masquer(); }
+	if (Glitch)  { Glitch->Arreter(); }
+	if (Visage)  { Visage->Reinitialiser(); }
 
 	const UEnum* Enum = StaticEnum<EGuardFinDeSession>();
 	UE_LOG(LogGardeFrontiere, Log, TEXT("Fin de session : %s"),
@@ -225,6 +267,28 @@ void AGuardSessionManager::SurPresencePerdue()
 
 // -- Sidecar -------------------------------------------------------------
 
+void AGuardSessionManager::SurGlitchTermine()
+{
+	// L'effet a couvert la substitution : on peut permuter sans que le
+	// visiteur voie l'avatar disparaitre.
+	if (Avatars)
+	{
+		Avatars->Permuter();
+	}
+}
+
+void AGuardSessionManager::SurAvatarChange(AActor* NouvelAvatar, int32 Index)
+{
+	IndexAvatarCourant = Index;
+
+	// L'ancien maillage vient d'etre detruit : sans ce reciblage, les
+	// ecritures d'emotion partiraient dans le vide, sans erreur visible.
+	if (Visage && Avatars)
+	{
+		Visage->CiblerMaillage(Avatars->TrouverMaillageFacial());
+	}
+}
+
 void AGuardSessionManager::SurParoleDebut(const FString& Texte, EGuardEmotion Emotion)
 {
 	bIADisponible = true;
@@ -234,6 +298,10 @@ void AGuardSessionManager::SurParoleDebut(const FString& Texte, EGuardEmotion Em
 		ChangerPhase(EGuardPhase::Interrogatoire);
 	}
 
+	if (Visage)
+	{
+		Visage->AppliquerEmotion(Emotion);
+	}
 	OnEmotionChangee.Broadcast(Emotion);
 
 	// Tant que l'echange vit, l'abandon est repousse.
@@ -250,7 +318,10 @@ void AGuardSessionManager::SurVerdict(EGuardVerdict Decision)
 	DernierVerdict = Decision;
 	ChangerPhase(EGuardPhase::Verdict);
 
-	// Le Blueprint affiche ici stamp_accepted ou stamp_refused.
+	if (Tampons)
+	{
+		Tampons->AfficherVerdict(Decision);
+	}
 	OnVerdictRendu.Broadcast(Decision);
 }
 
@@ -269,7 +340,10 @@ void AGuardSessionManager::SurDelaiSortie()
 {
 	ChangerPhase(EGuardPhase::SortieZone);
 
-	// Le Blueprint affiche le panneau "quittez la zone" (Exit_Stamp).
+	if (Tampons)
+	{
+		Tampons->AfficherSortieZone();
+	}
 	OnDemandeSortieZone.Broadcast();
 
 	// A partir d'ici, seul le depart du visiteur clot la session. On garde

@@ -20,6 +20,10 @@
 class USidecarClient;
 class ULidarPresenceComponent;
 class UAgentVoiceComponent;
+class UAgentFaceComponent;
+class UGlitchComponent;
+class UAvatarSwitcherComponent;
+class UStampComponent;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(
 	FOnPhaseChangee, EGuardPhase, NouvellePhase);
@@ -167,6 +171,22 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Garde Frontiere")
 	TObjectPtr<UAgentVoiceComponent> Voix;
 
+	/** Ecrit les poids d'emotion sur l'AnimBP du MetaHuman actif. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Garde Frontiere")
+	TObjectPtr<UAgentFaceComponent> Visage;
+
+	/** Masque la substitution d'avatar. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Garde Frontiere")
+	TObjectPtr<UGlitchComponent> Glitch;
+
+	/** Detruit et respawne le MetaHuman entre deux visiteurs. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Garde Frontiere")
+	TObjectPtr<UAvatarSwitcherComponent> Avatars;
+
+	/** Tampons accepte/refuse et panneau de sortie. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Garde Frontiere")
+	TObjectPtr<UStampComponent> Tampons;
+
 	UPROPERTY(BlueprintReadOnly, Category = "Garde Frontiere")
 	TObjectPtr<USidecarClient> Sidecar;
 
@@ -192,6 +212,10 @@ private:
 	// Reactions au capteur de presence
 	UFUNCTION() void SurPresenceDetectee();
 	UFUNCTION() void SurPresencePerdue();
+
+	// Reactions a la scenographie
+	UFUNCTION() void SurGlitchTermine();
+	UFUNCTION() void SurAvatarChange(AActor* NouvelAvatar, int32 Index);
 
 	// Reactions au sidecar
 	UFUNCTION() void SurParoleDebut(const FString& Texte, EGuardEmotion Emotion);
