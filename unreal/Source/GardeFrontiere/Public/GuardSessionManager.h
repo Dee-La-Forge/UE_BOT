@@ -272,8 +272,13 @@ private:
 	/** Pose l'agent selon bEnEcoute. Rejouee a chaque substitution d'avatar. */
 	void AppliquerPosture();
 
-	/** Signale la presence au sidecar — apres la substitution, jamais avant. */
-	void AmorcerDialogue();
+	/**
+	 * Ouvre la scene : diffuse l'avatar en place, puis lance le dialogue.
+	 *
+	 * Appelee APRES la substitution, jamais avant — l'index diffus doit etre
+	 * celui de l'avatar reellement present, et l'agent qui parle doit exister.
+	 */
+	void OuvrirLaScene();
 
 	// Reactions au capteur de presence
 	UFUNCTION() void SurPresenceDetectee();

@@ -78,6 +78,16 @@ public:
 	UPROPERTY(BlueprintReadOnly, Category = "Glitch")
 	bool bEnCours = false;
 
+	/**
+	 * Effet en cours, retard d'amorcage compris.
+	 *
+	 * bEnCours seul ne suffit pas : pendant RetardAvantEffet la substitution
+	 * est engagee mais l'effet n'a pas commence, et un appelant qui se fierait
+	 * au seul drapeau croirait la voie libre.
+	 */
+	UFUNCTION(BlueprintPure, Category = "Glitch")
+	bool EstEnCours() const;
+
 	/** Emis a la fin — c'est le moment ou la substitution d'avatar est sure. */
 	UPROPERTY(BlueprintAssignable, Category = "Glitch")
 	FOnGlitchTermine OnGlitchTermine;

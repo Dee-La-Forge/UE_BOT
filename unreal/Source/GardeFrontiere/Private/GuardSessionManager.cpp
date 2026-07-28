@@ -229,29 +229,26 @@ void AGuardSessionManager::DemarrerSession()
 		Tampons->Masquer();
 	}
 
-	// Le glitch masque la substitution. La permutation elle-meme attend
-	// OnGlitchTermine — a defaut d'effet, on permute tout de suite plutot
-	// que de rester bloque.
+	// Aucun glitch a l'arrivee : la substitution a eu lieu au depart du
+	// visiteur precedent, l'agent en poste est deja le bon. Un visiteur qui
+	// se presente doit trouver quelqu'un, pas un ecran brouille.
 	//
-	// L'amorce du dialogue suit la substitution, jamais l'inverse : l'agent
-	// qui parle doit d'abord exister. Signaler la presence des maintenant
-	// faisait repondre le sidecar pendant que le glitch masquait encore la
-	// scene — la voix sortait d'un avatar pas encore spawne, donc sans
-	// lipsync possible, et le visiteur entendait parler un ecran brouille.
-	if (Glitch)
+	// Reste le cas ou il arrive AVANT que la substitution precedente ne soit
+	// finie — deux visiteurs qui se suivent de pres. On la termine seance
+	// tenante plutot que de l'abandonner : sans quoi il aurait le meme visage
+	// que son predecesseur, ce que toute la mecanique cherche a eviter.
+	if (Glitch && Glitch->EstEnCours())
 	{
-		Glitch->Declencher();   // AmorcerDialogue() suivra SurGlitchTermine
-	}
-	else
-	{
+		UE_LOG(LogGardeFrontiere, Log,
+			TEXT("Visiteur pendant une substitution — on l'acheve immediatement"));
+		Glitch->Arreter();
 		if (Avatars)
 		{
 			Avatars->Permuter();
 		}
-		AmorcerDialogue();
 	}
 
-	OnSessionDemarree.Broadcast(IndexAvatarCourant);
+	OuvrirLaScene();
 	ArmerAbandon();
 }
 
@@ -315,6 +312,21 @@ void AGuardSessionManager::TerminerSession(EGuardFinDeSession Raison)
 
 	ChangerPhase(EGuardPhase::Veille);
 	OnSessionFinie.Broadcast(Raison);
+
+	// La zone se libere : c'est MAINTENANT qu'on change de visage, derriere
+	// le glitch, sans temoin. Le visiteur suivant trouvera un autre agent
+	// sans avoir vu la substitution — c'est tout l'objet du dispositif.
+	//
+	// Declenche apres le Arreter() du nettoyage ci-dessus, sinon on eteindrait
+	// l'effet qu'on vient d'allumer.
+	if (Glitch)
+	{
+		Glitch->Declencher();   // la permutation suivra OnGlitchTermine
+	}
+	else if (Avatars)
+	{
+		Avatars->Permuter();
+	}
 }
 
 // -- Capteur de presence -------------------------------------------------
@@ -353,20 +365,26 @@ void AGuardSessionManager::SurPresencePerdue()
 
 void AGuardSessionManager::SurGlitchTermine()
 {
-	// L'effet a couvert la substitution : on peut permuter sans que le
-	// visiteur voie l'avatar disparaitre.
+	// Le glitch ne joue plus qu'entre deux visiteurs, la zone vide. Il n'y a
+	// donc plus rien a garder ici : permuter est tout ce qu'il reste a faire,
+	// et le prochain visiteur trouvera le nouveau visage en poste.
+	//
+	// Si un visiteur s'est presente entre-temps, DemarrerSession a deja
+	// arrete l'effet et permute : cette fonction n'est alors pas appelee.
 	if (Avatars)
 	{
 		Avatars->Permuter();
 	}
-
-	// Et seulement maintenant, l'agent prend la parole — devant un visiteur
-	// qui le voit.
-	AmorcerDialogue();
 }
 
-void AGuardSessionManager::AmorcerDialogue()
+void AGuardSessionManager::OuvrirLaScene()
 {
+	// L'index n'est fiable qu'ICI. Diffuse au demarrage de la session, il
+	// designait encore l'avatar precedent : la substitution n'a lieu qu'a la
+	// fin du glitch. Invisible avec un seul avatar renseigne, faux des qu'il
+	// y en a plusieurs — et la scenographie se serait trompee de personnage.
+	OnSessionDemarree.Broadcast(IndexAvatarCourant);
+
 	if (Sidecar && Sidecar->EstConnecte())
 	{
 		Sidecar->SignalerPresence();

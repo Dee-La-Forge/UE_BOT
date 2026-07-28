@@ -86,6 +86,13 @@ class Serveur:
 
     # -- Tour de parole ---------------------------------------------------
 
+    def _annuler_intro(self) -> None:
+        """Coupe l'intro si elle court encore."""
+        tache = getattr(self, "_tache_intro", None)
+        if tache is not None and not tache.done():
+            tache.cancel()
+        self._tache_intro = None
+
     async def _jouer_intro(self, ws: ServerConnection) -> None:
         """Fait parler l'agent des l'arrivee du visiteur.
 
@@ -114,6 +121,12 @@ class Serveur:
                     if a_parle:
                         await self._envoyer(ws, "parole.fin")
                     await self._conclure(ws, element)
+
+        except asyncio.CancelledError:
+            # Le visiteur est parti pendant l'accueil : on se tait, sans
+            # repli. Parler a une zone vide serait pire que le silence.
+            _log.info("intro interrompue — visiteur parti")
+            raise
 
         except Exception:
             _log.exception("echec de l'intro")
@@ -205,9 +218,18 @@ class Serveur:
             self.pipeline.reinitialiser()
             await self._envoyer(ws, "session.demarree", avatar=self._avatar)
             _log.info("session demarree")
-            await self._jouer_intro(ws)
+
+            # L'intro tourne A COTE de la boucle de reception, pas dedans.
+            # L'attendre ici bloquerait `async for message in ws` pendant
+            # toute la generation — LLM puis TTS, plusieurs secondes — et le
+            # sidecar serait sourd au moment ou il parle : ni l'audio du
+            # visiteur, ni son depart ne seraient traites.
+            self._tache_intro = asyncio.create_task(self._jouer_intro(ws))
 
         elif evenement in ("presence.perdue", "session.reset"):
+            # Le visiteur part : on coupe l'intro en cours plutot que de
+            # continuer a parler dans le vide.
+            self._annuler_intro()
             self.pipeline.reinitialiser()
             if self._occupe.locked():
                 self._occupe.release()

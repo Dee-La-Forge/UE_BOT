@@ -173,6 +173,18 @@ bool UAgentFaceComponent::EcrireFlottant(FName Nom, float Valeur)
 	FFloatProperty* Prop = FindFProperty<FFloatProperty>(Anim->GetClass(), Nom);
 	if (!Prop)
 	{
+		// Un nom introuvable est le seul mode de panne silencieux de tout le
+		// lipsync : la fonction rend false, personne ne le lit, et la bouche
+		// reste fermee sans qu'aucune ligne ne l'explique. On le dit — une
+		// fois par nom, sinon ce serait dix lignes par seconde.
+		if (!NomsIntrouvables.Contains(Nom))
+		{
+			NomsIntrouvables.Add(Nom);
+			UE_LOG(LogGardeFrontiere, Warning,
+				TEXT("Visage : '%s' absent de %s — la pose ne sera jamais ecrite. ")
+				TEXT("Verifier les variables flottantes de l'AnimBP facial."),
+				*Nom.ToString(), *Anim->GetClass()->GetName());
+		}
 		return false;
 	}
 

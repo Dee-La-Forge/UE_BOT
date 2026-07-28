@@ -92,6 +92,19 @@ void UGlitchComponent::AppliquerIntensite(float Valeur)
 	}
 }
 
+bool UGlitchComponent::EstEnCours() const
+{
+	if (bEnCours)
+	{
+		return true;
+	}
+
+	// Le retard d'amorcage compte : la substitution est engagee des
+	// Declencher(), meme si rien n'est encore visible.
+	const UWorld* Monde = GetWorld();
+	return Monde && Monde->GetTimerManager().IsTimerActive(MinuterieRetard);
+}
+
 void UGlitchComponent::Declencher()
 {
 	if (bEnCours)
@@ -136,6 +149,15 @@ void UGlitchComponent::Demarrer()
 
 void UGlitchComponent::Arreter()
 {
+	// AVANT le garde-fou sur bEnCours : pendant RetardAvantEffet, l'effet
+	// n'a pas encore commence — bEnCours est faux — mais la minuterie court.
+	// Sortir ici la laissait vivre, et le glitch se declenchait tout seul
+	// apres la fin de la session, devant une borne retournee en veille.
+	if (UWorld* Monde = GetWorld())
+	{
+		Monde->GetTimerManager().ClearTimer(MinuterieRetard);
+	}
+
 	if (!bEnCours)
 	{
 		return;

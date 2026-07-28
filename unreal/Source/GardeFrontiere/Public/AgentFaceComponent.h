@@ -162,6 +162,9 @@ private:
 	/** Horloge locale, en secondes depuis le debut de la replique. */
 	float TempsLipsync = 0.f;
 
+	/** Courbes deja signalees absentes — pour n'avertir qu'une fois par nom. */
+	TSet<FName> NomsIntrouvables;
+
 	const FMelangeEmotion& MelangePour(EGuardEmotion Emotion) const;
 
 	UPROPERTY() TWeakObjectPtr<USkeletalMeshComponent> MaillageFacial;
