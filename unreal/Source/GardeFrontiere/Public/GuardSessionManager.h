@@ -19,6 +19,7 @@
 
 class USidecarClient;
 class ULidarPresenceComponent;
+class UAgentVoiceComponent;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(
 	FOnPhaseChangee, EGuardPhase, NouvellePhase);
@@ -158,8 +159,23 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Garde Frontiere")
 	TObjectPtr<ULidarPresenceComponent> Presence;
 
+	/** Joue les trames audio du sidecar au fil de leur arrivee. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Garde Frontiere")
+	TObjectPtr<UAgentVoiceComponent> Voix;
+
 	UPROPERTY(BlueprintReadOnly, Category = "Garde Frontiere")
 	TObjectPtr<USidecarClient> Sidecar;
+
+	/**
+	 * Transmet un segment de parole du visiteur au sidecar.
+	 *
+	 * A appeler depuis le Blueprint, avec les echantillons que SileroVAD
+	 * vient de borner. La conversion vers PCM16 16 kHz mono — ce qu'attend
+	 * Whisper — est faite ici : le Blueprint n'a pas a s'en soucier.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Garde Frontiere|Audio")
+	void TransmettreParoleVisiteur(const TArray<float>& Echantillons,
+		int32 TauxSource, int32 NbCanaux = 1);
 
 protected:
 	virtual void BeginPlay() override;

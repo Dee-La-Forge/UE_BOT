@@ -3,6 +3,8 @@
 #include "GardeFrontiere.h"
 #include "SidecarClient.h"
 #include "LidarPresenceComponent.h"
+#include "AgentVoiceComponent.h"
+#include "AudioBridge.h"
 #include "TimerManager.h"
 #include "Engine/World.h"
 
@@ -11,6 +13,9 @@ AGuardSessionManager::AGuardSessionManager()
 	PrimaryActorTick.bCanEverTick = false;
 
 	Presence = CreateDefaultSubobject<ULidarPresenceComponent>(TEXT("Presence"));
+
+	Voix = CreateDefaultSubobject<UAgentVoiceComponent>(TEXT("Voix"));
+	Voix->SetupAttachment(RootComponent);
 }
 
 void AGuardSessionManager::BeginPlay()
@@ -23,6 +28,19 @@ void AGuardSessionManager::BeginPlay()
 	Sidecar->OnVerdict.AddDynamic(this, &AGuardSessionManager::SurVerdict);
 	Sidecar->OnSessionTerminee.AddDynamic(this, &AGuardSessionManager::SurSessionTerminee);
 	Sidecar->OnPanne.AddDynamic(this, &AGuardSessionManager::SurPanneIA);
+
+	// Les trames audio arrivent en binaire, hors du systeme de delegues
+	// Blueprint : trop volumineuses pour y transiter. On les route
+	// directement vers la voix.
+	Sidecar->OnAudioRecu.AddLambda(
+		[this](const TArray<uint8>& PCM16, int32 Taux)
+		{
+			if (Voix)
+			{
+				Voix->EmpilerTrame(PCM16, Taux);
+			}
+		});
+
 	Sidecar->Connecter(UrlSidecar);
 
 	if (Presence)
@@ -114,6 +132,39 @@ void AGuardSessionManager::DemarrerSession()
 	ArmerAbandon();
 }
 
+void AGuardSessionManager::TransmettreParoleVisiteur(
+	const TArray<float>& Echantillons, int32 TauxSource, int32 NbCanaux)
+{
+	if (Phase == EGuardPhase::Veille || Echantillons.Num() == 0)
+	{
+		return;
+	}
+
+	// Un micro debranche ou coupe produit un segment silencieux. L'envoyer
+	// ferait transcrire du vide et repondre l'agent dans le vent.
+	const float Crete = UAudioBridge::NiveauCrete(Echantillons);
+	if (Crete < 0.005f)
+	{
+		UE_LOG(LogGardeFrontiere, Warning,
+			TEXT("Parole visiteur ignoree : niveau quasi nul (%.4f) — micro absent ou coupe"),
+			Crete);
+		return;
+	}
+
+	const TArray<uint8> PCM16 =
+		UAudioBridge::VersPCM16Visiteur(Echantillons, TauxSource, NbCanaux);
+
+	if (Sidecar && Sidecar->EstConnecte())
+	{
+		Sidecar->EnvoyerAudioVisiteur(PCM16);
+		ArmerAbandon();   // le visiteur parle : on repousse l'abandon
+	}
+	else
+	{
+		OnRepliqueDeSecours.Broadcast(TEXT("Repetez."));
+	}
+}
+
 void AGuardSessionManager::TerminerSession(EGuardFinDeSession Raison)
 {
 	if (Phase == EGuardPhase::Veille)
@@ -122,6 +173,10 @@ void AGuardSessionManager::TerminerSession(EGuardFinDeSession Raison)
 	}
 
 	AnnulerMinuteries();
+	if (Voix)
+	{
+		Voix->Interrompre();   // on ne laisse pas l'agent parler dans le vide
+	}
 
 	const UEnum* Enum = StaticEnum<EGuardFinDeSession>();
 	UE_LOG(LogGardeFrontiere, Log, TEXT("Fin de session : %s"),
