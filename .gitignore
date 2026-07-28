@@ -36,8 +36,15 @@ Builds/
 # scenographie, map, materiaux, widgets — est suivi normalement, via LFS
 # (voir .gitattributes).
 unreal/Content/MetaHumans/
+unreal/Content/PoliceUniform/
 unreal/Plugins/Convai/
 unreal/Plugins/SerialCOM/
+unreal/Plugins/RuntimeAudioImporter/
+unreal/Plugins/RuntimeAudioImporterSileroVAD/
+
+# Artefact d'installation de Git LFS sous Windows : faute de /dev/null,
+# une redirection y a fabrique un vrai repertoire contenant des hooks.
+dev/null/
 
 # ---------- Sidecar IA (Python) ----------
 __pycache__/

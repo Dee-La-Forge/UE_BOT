@@ -16,7 +16,18 @@ copier() {
     return 1
   fi
   mkdir -p "$(dirname "$dst")"
-  cp -r "$src" "$dst" 2>/dev/null
+
+  # `cp -r src dst` copie DANS dst quand dst existe deja, creant
+  # AgentGermain/AgentGermain. Une premiere version du script le faisait,
+  # et une relance dupliquait 3,4 Go en repertoires imbriques.
+  # On copie donc le CONTENU de la source, pas la source elle-meme.
+  if [ -d "$src" ]; then
+    mkdir -p "$dst"
+    cp -r "$src/." "$dst/" 2>/dev/null
+  else
+    cp -f "$src" "$dst" 2>/dev/null
+  fi
+
   local taille; taille=$(du -sm "$dst" 2>/dev/null | cut -f1)
   printf "  ok  %-52s %5s Mo\n" "$1" "$taille"
 }
@@ -37,9 +48,26 @@ cp "$ANCIEN/Plugins/SerialCOM/SERIALCOM.uplugin" "$NOUVEAU/Plugins/SerialCOM/" 2
 copier "Plugins/SerialCOM/Source" "Plugins/SerialCOM/Source"
 
 echo ""
+echo "=== 2bis/4  Plugins audio — capture micro et VAD ==="
+echo "  (SileroVAD borne les segments de parole : c'est lui qui dit au"
+echo "   sidecar quand le visiteur a fini de parler)"
+for p in RuntimeAudioImporter RuntimeAudioImporterSileroVAD; do
+  mkdir -p "$NOUVEAU/Plugins/$p"
+  cp "$ANCIEN/Plugins/$p/$p.uplugin" "$NOUVEAU/Plugins/$p/" 2>/dev/null && echo "  ok  $p.uplugin"
+  copier "Plugins/$p/Source"    "Plugins/$p/Source"
+  copier "Plugins/$p/Content"   "Plugins/$p/Content"
+  copier "Plugins/$p/Resources" "Plugins/$p/Resources"
+done
+
+echo ""
 echo "=== 3/4  MetaHuman ==="
 copier "Content/MetaHumans/AgentGermain" "Content/MetaHumans/AgentGermain"
 copier "Content/MetaHumans/Common"       "Content/MetaHumans/Common"
+# L'uniforme est reference par BP_AgentGermain (ceinture, bottes, casquette,
+# pantalon, chemise), pas par la map. Le premier tri, base sur les seules
+# references de Studio.umap, l'avait donc ecarte a tort : l'agent
+# apparaissait nu.
+copier "Content/PoliceUniform"           "Content/PoliceUniform"
 
 echo ""
 echo "=== 4/4  Scenographie et logique existante ==="

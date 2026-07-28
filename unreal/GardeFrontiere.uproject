@@ -46,6 +46,16 @@
 		{
 			"Name": "SERIALCOM",
 			"Enabled": true
+		},
+		{
+			"_comment": "Capture micro et import audio a l'execution.",
+			"Name": "RuntimeAudioImporter",
+			"Enabled": true
+		},
+		{
+			"_comment": "Detection d'activite vocale. C'est lui qui borne les segments de parole du visiteur et signale la fin d'un enonce — l'endpointing est donc deja resolu, et c'est un gain de latence acquis pour le sidecar.",
+			"Name": "RuntimeAudioImporterSileroVAD",
+			"Enabled": true
 		}
 	]
 }
