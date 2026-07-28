@@ -48,9 +48,9 @@ public:
 	/**
 	 * Secondes d'audio deja empilees mais pas encore jouees.
 	 *
-	 * C'est le retard de la file. Une trame remise maintenant ne se fera
-	 * entendre que dans ce delai — et sa frise de visemes doit etre decalee
-	 * d'autant, sinon la bouche bouge avant la voix.
+	 * C'est le retard de la file. Conserve pour Audio2Face : synchroniser des
+	 * blendshapes sur une voix mise en file suppose de savoir de combien
+	 * cette file est en retard.
 	 */
 	UFUNCTION(BlueprintPure, Category = "Garde Frontiere|Voix")
 	float DureeEnAttente() const;

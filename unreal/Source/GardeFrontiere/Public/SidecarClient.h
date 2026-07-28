@@ -43,15 +43,13 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(
 	FOnPanne, const FString&, Raison);
 
 /**
- * Trame audio recue (PCM16 mono), avec la frise de visemes qui la decrit.
+ * Trame audio recue (PCM16 mono), a jouer telle quelle.
  *
- * Les trois vont ensemble et ne doivent jamais etre separes : la frise est
- * datee relativement au debut de CETTE trame. Diffusee a part, elle se
- * desynchroniserait au premier hoquet de la file de lecture.
+ * Le lipsync ne passe pas par ici : il viendra d'Audio2Face via LiveLink,
+ * qui alimente l'AnimBP facial sans transiter par le C++.
  */
-DECLARE_MULTICAST_DELEGATE_ThreeParams(
-	FOnAudioRecu, const TArray<uint8>& /*PCM16*/, int32 /*Taux*/,
-	const TArray<FGuardViseme>& /*Visemes*/);
+DECLARE_MULTICAST_DELEGATE_TwoParams(
+	FOnAudioRecu, const TArray<uint8>& /*PCM16*/, int32 /*Taux*/);
 
 
 UCLASS(BlueprintType)
@@ -140,7 +138,4 @@ private:
 	 * plutot qu'une constante.
 	 */
 	int32 TauxAudioAttendu = 22050;
-
-	/** Frise annoncee par le dernier `parole.audio`, en attente de sa trame. */
-	TArray<FGuardViseme> VisemesAttendus;
 };

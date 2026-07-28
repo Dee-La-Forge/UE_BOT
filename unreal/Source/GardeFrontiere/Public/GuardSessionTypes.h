@@ -75,27 +75,3 @@ enum class EGuardFinDeSession : uint8
 	/** Le sidecar est injoignable ou a echoue. */
 	PanneIA        UMETA(DisplayName = "Panne IA"),
 };
-
-/**
- * Une pose de bouche, bornee dans le temps.
- *
- * Le sidecar joint cette frise a chaque trame audio : les 25 poses MHF_*
- * du plugin Convai, avec leurs instants de debut et de fin RELATIFS au
- * debut de la trame — pas au debut de la replique. C'est ce qui permet de
- * les recaler sur la file de lecture, qui a toujours du retard.
- */
-USTRUCT(BlueprintType)
-struct FGuardViseme
-{
-	GENERATED_BODY()
-
-	/** Nom de la courbe a ecrire dans l'AnimBP facial, ex. MHF_Ah. */
-	UPROPERTY(BlueprintReadOnly, Category = "Garde Frontiere|Lipsync")
-	FName Pose;
-
-	UPROPERTY(BlueprintReadOnly, Category = "Garde Frontiere|Lipsync")
-	float Debut = 0.f;
-
-	UPROPERTY(BlueprintReadOnly, Category = "Garde Frontiere|Lipsync")
-	float Fin = 0.f;
-};

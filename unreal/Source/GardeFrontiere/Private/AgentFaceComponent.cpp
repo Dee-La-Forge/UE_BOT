@@ -6,140 +6,7 @@
 
 UAgentFaceComponent::UAgentFaceComponent()
 {
-	// Le lipsync a besoin d'une horloge : les poses durent 60 a 120 ms et se
-	// recouvrent. Le tick reste inerte tant qu'aucune frise n'est planifiee.
-	PrimaryComponentTick.bCanEverTick = true;
-	PrimaryComponentTick.bStartWithTickEnabled = false;
-}
-
-// -- Lipsync -------------------------------------------------------------
-
-void UAgentFaceComponent::PlanifierVisemes(
-	const TArray<FGuardViseme>& Visemes, float DelaiAvantLecture)
-{
-	if (Visemes.Num() == 0)
-	{
-		return;
-	}
-
-	// Rien ne joue : l'horloge repart de zero avec cette trame. Sinon on
-	// empile a la suite, sur l'horloge deja en cours.
-	if (VisemesPlanifies.Num() == 0 && PosesActives.Num() == 0)
-	{
-		TempsLipsync = 0.f;
-	}
-
-	const float Origine = TempsLipsync + FMath::Max(0.f, DelaiAvantLecture);
-
-	VisemesPlanifies.Reserve(VisemesPlanifies.Num() + Visemes.Num());
-	for (const FGuardViseme& V : Visemes)
-	{
-		FGuardViseme Decale = V;
-		Decale.Debut = Origine + V.Debut;
-		Decale.Fin = Origine + V.Fin;
-		VisemesPlanifies.Add(Decale);
-	}
-
-	SetComponentTickEnabled(true);
-}
-
-void UAgentFaceComponent::ArreterVisemes()
-{
-	VisemesPlanifies.Reset();
-
-	// Refermer ce qui restait ouvert : une bouche figee sur un "Ah" au
-	// moment ou l'agent se tait est pire que pas de lipsync du tout.
-	for (const FName& Pose : PosesActives)
-	{
-		EcrireFlottant(Pose, 0.f);
-	}
-	PosesActives.Reset();
-
-	TempsLipsync = 0.f;
-	SetComponentTickEnabled(false);
-}
-
-float UAgentFaceComponent::PoidsViseme(const FGuardViseme& V, float Temps) const
-{
-	if (Temps <= V.Debut || Temps >= V.Fin)
-	{
-		return 0.f;
-	}
-
-	// Le fondu ne peut pas depasser la moitie de la pose, sinon l'ouverture
-	// et la fermeture se chevaucheraient et la pose n'atteindrait jamais son
-	// amplitude.
-	const float Duree = V.Fin - V.Debut;
-	const float Fondu = FMath::Min(FonduViseme, Duree * 0.5f);
-
-	if (Fondu <= KINDA_SMALL_NUMBER)
-	{
-		return AmplitudeViseme;
-	}
-
-	const float DepuisDebut = Temps - V.Debut;
-	const float AvantFin = V.Fin - Temps;
-	const float Facteur = FMath::Min(
-		FMath::Min(DepuisDebut, AvantFin) / Fondu, 1.f);
-
-	return AmplitudeViseme * Facteur;
-}
-
-void UAgentFaceComponent::TickComponent(
-	float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
-{
-	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
-
-	TempsLipsync += DeltaTime;
-
-	// Poids cumules : deux poses voisines se recouvrent, et c'est ce
-	// recouvrement qui fait la fluidite de l'articulation.
-	TMap<FName, float> Poids;
-	int32 Restants = 0;
-
-	for (const FGuardViseme& V : VisemesPlanifies)
-	{
-		if (TempsLipsync < V.Fin)
-		{
-			++Restants;
-		}
-
-		const float P = PoidsViseme(V, TempsLipsync);
-		if (P > 0.f)
-		{
-			float& Cumul = Poids.FindOrAdd(V.Pose, 0.f);
-			Cumul = FMath::Max(Cumul, P);
-		}
-	}
-
-	for (const TPair<FName, float>& Paire : Poids)
-	{
-		EcrireFlottant(Paire.Key, Paire.Value);
-		PosesActives.Add(Paire.Key);
-	}
-
-	// Refermer celles qui viennent de s'eteindre — sans quoi elles
-	// resteraient ouvertes a leur derniere valeur.
-	for (auto It = PosesActives.CreateIterator(); It; ++It)
-	{
-		if (!Poids.Contains(*It))
-		{
-			EcrireFlottant(*It, 0.f);
-			It.RemoveCurrent();
-		}
-	}
-
-	// La frise est epuisee : on purge et on s'arrete plutot que de parcourir
-	// indefiniment un tableau de poses passees.
-	if (Restants == 0)
-	{
-		VisemesPlanifies.Reset();
-		if (PosesActives.Num() == 0)
-		{
-			TempsLipsync = 0.f;
-			SetComponentTickEnabled(false);
-		}
-	}
+	PrimaryComponentTick.bCanEverTick = false;
 }
 
 void UAgentFaceComponent::CiblerMaillage(USkeletalMeshComponent* Maillage)
@@ -173,15 +40,15 @@ bool UAgentFaceComponent::EcrireFlottant(FName Nom, float Valeur)
 	FFloatProperty* Prop = FindFProperty<FFloatProperty>(Anim->GetClass(), Nom);
 	if (!Prop)
 	{
-		// Un nom introuvable est le seul mode de panne silencieux de tout le
-		// lipsync : la fonction rend false, personne ne le lit, et la bouche
-		// reste fermee sans qu'aucune ligne ne l'explique. On le dit — une
+		// Un nom introuvable ne provoque aucune erreur : la fonction rend
+		// false et personne ne le lit. C'est ce silence qui a masque un
+		// chemin de lipsync entier ecrivant dans le vide. On le dit — une
 		// fois par nom, sinon ce serait dix lignes par seconde.
 		if (!NomsIntrouvables.Contains(Nom))
 		{
 			NomsIntrouvables.Add(Nom);
 			UE_LOG(LogGardeFrontiere, Warning,
-				TEXT("Visage : '%s' absent de %s — la pose ne sera jamais ecrite. ")
+				TEXT("Visage : '%s' absent de %s — la valeur ne sera jamais ecrite. ")
 				TEXT("Verifier les variables flottantes de l'AnimBP facial."),
 				*Nom.ToString(), *Anim->GetClass()->GetName());
 		}
@@ -256,8 +123,5 @@ void UAgentFaceComponent::AppliquerMelange(const FMelangeEmotion& M)
 
 void UAgentFaceComponent::Reinitialiser()
 {
-	// La bouche aussi : un visage remis au neutre en gardant un viseme ouvert
-	// laisserait l'agent figé sur une voyelle apres le depart du visiteur.
-	ArreterVisemes();
 	AppliquerEmotion(EGuardEmotion::Neutral);
 }

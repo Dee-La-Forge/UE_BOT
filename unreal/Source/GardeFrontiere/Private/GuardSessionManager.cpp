@@ -43,24 +43,11 @@ void AGuardSessionManager::BeginPlay()
 	// Blueprint : trop volumineuses pour y transiter. On les route
 	// directement vers la voix.
 	Sidecar->OnAudioRecu.AddLambda(
-		[this](const TArray<uint8>& PCM16, int32 Taux, const TArray<FGuardViseme>& Visemes)
+		[this](const TArray<uint8>& PCM16, int32 Taux)
 		{
-			if (!Voix)
+			if (Voix)
 			{
-				return;
-			}
-
-			// Le retard de la file se mesure AVANT d'empiler : c'est le delai
-			// au bout duquel cette trame se fera entendre, et donc celui dont
-			// il faut decaler sa frise. Mesure apres, il inclurait la trame
-			// elle-meme et la bouche aurait une phrase de retard.
-			const float Retard = Voix->DureeEnAttente();
-
-			Voix->EmpilerTrame(PCM16, Taux);
-
-			if (Visage)
-			{
-				Visage->PlanifierVisemes(Visemes, Retard);
+				Voix->EmpilerTrame(PCM16, Taux);
 			}
 		});
 
@@ -276,6 +263,14 @@ void AGuardSessionManager::TransmettreParoleVisiteur(
 
 	if (Sidecar && Sidecar->EstConnecte())
 	{
+		// Le visiteur repond pour la premiere fois : l'accueil est termine,
+		// l'interrogatoire commence. C'est le meme decoupage que le sidecar,
+		// dont la phase INTRO se ferme sur la premiere reponse.
+		if (Phase == EGuardPhase::Accueil)
+		{
+			ChangerPhase(EGuardPhase::Interrogatoire);
+		}
+
 		Sidecar->EnvoyerAudioVisiteur(PCM16);
 		ArmerAbandon();   // le visiteur parle : on repousse l'abandon
 	}
@@ -351,10 +346,11 @@ void AGuardSessionManager::SurPresencePerdue()
 	const bool bApresVerdict =
 		Phase == EGuardPhase::SortieZone || Phase == EGuardPhase::Verdict;
 
-	if (Sidecar && Sidecar->EstConnecte())
-	{
-		Sidecar->SignalerAbsence();
-	}
+	// Le sidecar est prevenu par TerminerSession, et par elle seule. On
+	// envoyait ici presence.perdue puis, dans la foulee, session.reset — deux
+	// messages pour un seul evenement, que le sidecar traite a l'identique.
+	// Son journal en portait la trace en double a chaque depart, ce qui
+	// masquera un vrai probleme le jour ou il s'en presentera un.
 
 	TerminerSession(bApresVerdict
 		? EGuardFinDeSession::Nominale
@@ -417,10 +413,15 @@ void AGuardSessionManager::SurParoleDebut(const FString& Texte, EGuardEmotion Em
 {
 	bIADisponible = true;
 
-	if (Phase == EGuardPhase::Accueil)
-	{
-		ChangerPhase(EGuardPhase::Interrogatoire);
-	}
+	// La phase ne bascule PLUS ici. La premiere replique de l'agent est son
+	// accueil : cote sidecar c'est la phase INTRO, qui ne compte pas comme
+	// une question. Basculer des qu'il ouvre la bouche faisait diverger les
+	// deux machines a etats des le premier mot — sans consequence visible
+	// aujourd'hui, mais c'est l'ecart qui fabrique un bug le jour ou une
+	// regle s'appuie dessus.
+	//
+	// L'interrogatoire commence quand le visiteur repond : voir
+	// TransmettreParoleVisiteur.
 
 	if (Visage)
 	{

@@ -34,8 +34,10 @@ public class GardeFrontiere : ModuleRules
 			// Lecture audio de la parole de l'agent
 			"AudioMixer",
 
-			// Convai n'est conserve que pour ses animations MetaHuman —
-			// AnimBP corps et visage, visemes, emotions, suivi du regard.
+			// Convai n'est conserve que pour ses animations MetaHuman :
+			// les AnimBP de corps et de visage, et les poses d'emotion.
+			// Ni visemes ni suivi du regard — le lipsync viendra
+			// d'Audio2Face par LiveLink, et le LiDAR ne rend pas d'angle.
 			// La dependance est declaree ici pour une raison de build :
 			// ConvaiEditor la declare deja, mais UBT ne planifiait pas le
 			// module runtime pour autant, et l'edition de liens echouait

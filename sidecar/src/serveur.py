@@ -53,12 +53,13 @@ class Serveur:
 
     async def _envoyer_audio(self, ws: ServerConnection, m: MorceauAudio, seq: int) -> None:
         """JSON descriptif, puis la trame binaire qu'il annonce."""
+        # Plus de frise de visemes : elle nommait des poses MHF_* que
+        # Convai_MetaHuman_FaceAnim n'expose pas. Unreal les recevait et les
+        # ecrivait dans le vide. Le lipsync viendra d'Audio2Face, par
+        # LiveLink, sans passer par ce canal.
         await self._envoyer(
             ws, "parole.audio",
             seq=seq, taux=m.taux, texte=m.texte, premier=m.premier,
-            # Frise de visemes pour le mode degrade, quand NeuroSync est absent.
-            visemes=[{"pose": p, "debut": round(d, 4), "fin": round(f, 4)}
-                     for p, d, f in m.visemes],
         )
         await ws.send(self.pipeline.tts.en_pcm16(m.pcm))
 
@@ -73,7 +74,7 @@ class Serveur:
             await self._envoyer_audio(
                 ws,
                 MorceauAudio(pcm=parole.pcm, taux=parole.taux, texte=texte,
-                             premier=True, visemes=parole.visemes),
+                             premier=True),
                 seq=0,
             )
             await self._envoyer(ws, "parole.fin")

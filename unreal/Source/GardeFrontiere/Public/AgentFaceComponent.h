@@ -75,38 +75,6 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Garde Frontiere|Visage")
 	void Reinitialiser();
 
-	// -- Lipsync ----------------------------------------------------------
-
-	/**
-	 * Programme une frise de poses de bouche.
-	 *
-	 * `DelaiAvantLecture` est le retard de la file audio au moment ou la
-	 * trame y est deposee : les poses sont datees par rapport au debut de
-	 * leur trame, pas au temps present. Sans ce decalage, la bouche
-	 * devancerait la voix de tout l'encours de lecture.
-	 */
-	UFUNCTION(BlueprintCallable, Category = "Garde Frontiere|Lipsync")
-	void PlanifierVisemes(const TArray<FGuardViseme>& Visemes, float DelaiAvantLecture);
-
-	/** Ferme la bouche et oublie ce qui restait — interruption ou fin de session. */
-	UFUNCTION(BlueprintCallable, Category = "Garde Frontiere|Lipsync")
-	void ArreterVisemes();
-
-	/**
-	 * Duree d'ouverture et de fermeture d'une pose, en secondes.
-	 *
-	 * Une pose qui s'etablit d'un coup donne une bouche qui claque. Les
-	 * visemes durent 60 a 120 ms : le fondu doit rester bien en deca.
-	 */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Garde Frontiere|Lipsync",
-		meta = (ClampMin = "0.0", ClampMax = "0.1", Units = "s"))
-	float FonduViseme = 0.02f;
-
-	/** Ouverture maximale. A baisser si l'articulation parait exageree. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Garde Frontiere|Lipsync",
-		meta = (ClampMin = "0.0", ClampMax = "1.0"))
-	float AmplitudeViseme = 1.f;
-
 	// -- Correspondance tag -> melange, editable sans recompiler ----------
 	//
 	// Les valeurs par defaut traduisent le personnage : un garde-frontiere
@@ -141,26 +109,6 @@ public:
 private:
 	/** Ecrit un flottant sur l'AnimInstance par reflexion. */
 	bool EcrireFlottant(FName Nom, float Valeur);
-
-	virtual void TickComponent(float DeltaTime, ELevelTick TickType,
-		FActorComponentTickFunction* ThisTickFunction) override;
-
-	/** Poids d'une pose a un instant donne, fondus d'entree et de sortie compris. */
-	float PoidsViseme(const FGuardViseme& V, float Temps) const;
-
-	/**
-	 * Frise en attente, datee sur l'horloge du composant.
-	 *
-	 * Triee par instant de debut : les trames arrivent dans l'ordre et sont
-	 * planifiees a la suite, donc l'insertion preserve le tri.
-	 */
-	TArray<FGuardViseme> VisemesPlanifies;
-
-	/** Poses ecrites au dernier tick, a remettre a zero quand elles s'eteignent. */
-	TSet<FName> PosesActives;
-
-	/** Horloge locale, en secondes depuis le debut de la replique. */
-	float TempsLipsync = 0.f;
 
 	/** Courbes deja signalees absentes — pour n'avertir qu'une fois par nom. */
 	TSet<FName> NomsIntrouvables;
