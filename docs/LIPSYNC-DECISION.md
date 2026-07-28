@@ -169,3 +169,53 @@ rendre operationnel.
 **Pour debloquer un jour :** demander a Convai la specification d'inference
 correspondant a *ce* checkpoint — featurisation exacte et details
 d'architecture. Ils possedent le modele ; le code public lui est anterieur.
+
+---
+
+# Cible finale : tout le visage par LiveLink (decide, differe)
+
+**Decision du 28/07/2026.** On reste sur les 16 poses `Motions2/Face` pour
+l'instant, mais **LiveLink ARKit est la cible retenue**. A ne pas oublier.
+
+## Pourquoi c'est la bonne cible
+
+Deux mecanismes se confondent facilement :
+
+| | Source | Nature |
+|---|---|---|
+| Lipsync | l'audio | articulation, automatique |
+| Emotion | le recit | expression delibaree, decidee par le LLM |
+
+Les poses `MHF_*` ne couvrent que l'emotion, et de facon statique : cinq
+expressions figees la ou un visage reel en module des dizaines.
+
+En pilotant tout par LiveLink ARKit, le sidecar envoie audio **et** tag
+d'emotion, et recupere un visage complet — bouche et expression :
+
+```
+Sidecar ──► audio + [EMOTION:Concerned] ──► A2F/NeuroSync
+                                              │ 61 blendshapes ARKit
+                                              ▼ LiveLink UDP :11111
+                                          MetaHuman
+```
+
+NVIDIA Audio2Face-3D accepte l'emotion en entree, ce qui rend le tag du LLM
+directement exploitable.
+
+## Ce que ca simplifiera
+
+- **Plus besoin de connaitre la variable d'emotion de l'AnimBP Convai** —
+  on court-circuite entierement ce chemin.
+- Le desaccord entre `E_Emotions` (Amazement, Anger, Cheekiness…) et mes
+  tags GBNF (Stare, Concerned, Angry…) disparait : les deux ensembles ne
+  coincidaient pas, et c'etait une source d'erreur silencieuse.
+- Un pas de plus hors du plugin Convai.
+
+## Pourquoi differe
+
+Il faut configurer le Face AnimBP du MetaHuman pour accepter LiveLink :
+quelques heures, contre des poses qui fonctionnent deja. Ce n'est pas le
+chemin le plus court vers « l'agent parle avec l'IA locale », qui reste la
+priorite.
+
+**A reprendre une fois la boucle complete validee.**
