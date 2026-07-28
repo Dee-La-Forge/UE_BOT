@@ -4,6 +4,7 @@
 #include "SerialCom.h"
 #include "TimerManager.h"
 #include "Engine/World.h"
+#include "Async/Async.h"
 
 ULidarPresenceComponent::ULidarPresenceComponent()
 {
@@ -41,6 +42,32 @@ void ULidarPresenceComponent::EndPlay(const EEndPlayReason::Type Raison)
 
 // -- Liaison serie -------------------------------------------------------
 
+void ULidarPresenceComponent::ProgrammerReconnexion()
+{
+	UWorld* Monde = GetWorld();
+	if (!Monde)
+	{
+		return;
+	}
+
+	// Espacement croissant, plafonne a 30 s. L'ancienne version reessayait
+	// toutes les 5 s indefiniment et noyait le journal — au point de rendre
+	// illisibles les messages qui comptent.
+	++TentativesEchouees;
+	const float Delai = FMath::Min(DelaiReconnexion * TentativesEchouees, 30.f);
+
+	// On ne journalise que les premieres tentatives, puis une sur dix.
+	if (TentativesEchouees <= 3 || TentativesEchouees % 10 == 0)
+	{
+		UE_LOG(LogGardeFrontiere, Warning,
+			TEXT("Capteur : COM%d indisponible (tentative %d) — nouvel essai dans %.0f s"),
+			PortCOM, TentativesEchouees, Delai);
+	}
+
+	Monde->GetTimerManager().SetTimer(
+		MinuterieReconnexion, this, &ULidarPresenceComponent::OuvrirPort, Delai, false);
+}
+
 void ULidarPresenceComponent::OuvrirPort()
 {
 	UWorld* Monde = GetWorld();
@@ -59,6 +86,7 @@ void ULidarPresenceComponent::OuvrirPort()
 
 	if (bPortOuvert)
 	{
+		TentativesEchouees = 0;
 		UE_LOG(LogGardeFrontiere, Log,
 			TEXT("Capteur : COM%d ouvert a %d bauds"), PortCOM, VitesseBauds);
 
@@ -69,14 +97,9 @@ void ULidarPresenceComponent::OuvrirPort()
 	else
 	{
 		// L'ancien projet abandonnait ici : le capteur debranche condamnait
-		// la borne jusqu'au redemarrage. On reessaie indefiniment.
-		UE_LOG(LogGardeFrontiere, Warning,
-			TEXT("Capteur : COM%d indisponible — nouvelle tentative dans %.0f s"),
-			PortCOM, DelaiReconnexion);
-
-		Monde->GetTimerManager().SetTimer(
-			MinuterieReconnexion, this, &ULidarPresenceComponent::OuvrirPort,
-			FMath::Max(DelaiReconnexion, 1.f), false);
+		// la borne jusqu'au redemarrage. On reessaie, en espacant.
+		Serie = nullptr;
+		ProgrammerReconnexion();
 	}
 }
 
@@ -110,13 +133,58 @@ void ULidarPresenceComponent::Lire()
 			bPresent = false;
 			OnPresencePerdue.Broadcast();
 		}
-		OuvrirPort();
+		ProgrammerReconnexion();
 		return;
 	}
 
-	bool bSucces = false;
-	const FString Ligne = Serie->ReadString(bSucces).TrimStartAndEnd();
-	if (!bSucces || Ligne.IsEmpty() || !Ligne.IsNumeric())
+	// Une seule lecture en vol a la fois : USerialCom lit octet par octet
+	// et peut attendre jusqu'a 2 secondes par octet. En empiler plusieurs
+	// saturerait le pool de threads.
+	if (bLectureEnVol.Load())
+	{
+		return;
+	}
+	bLectureEnVol.Store(true);
+
+	TWeakObjectPtr<ULidarPresenceComponent> Faible(this);
+	USerialCom* Port = Serie;
+
+	// Le WaitForSingleObject de 2 s du plugin figerait boutons et menus s'il
+	// s'executait ici. On le deporte, et on ne revient sur le thread de jeu
+	// que pour appliquer le resultat.
+	AsyncTask(ENamedThreads::AnyBackgroundThreadNormalTask,
+		[Faible, Port]()
+		{
+			bool bSucces = false;
+			FString Ligne;
+
+			if (IsValid(Port))
+			{
+				Ligne = Port->Readln(bSucces);
+			}
+
+			AsyncTask(ENamedThreads::GameThread,
+				[Faible, Ligne, bSucces]()
+				{
+					ULidarPresenceComponent* Comp = Faible.Get();
+					if (!Comp)
+					{
+						return;   // le composant a disparu entre-temps
+					}
+					Comp->bLectureEnVol.Store(false);
+
+					if (bSucces && !Ligne.IsEmpty())
+					{
+						Comp->TraiterReleve(Ligne);
+					}
+				});
+		});
+}
+
+void ULidarPresenceComponent::TraiterReleve(const FString& Brut)
+{
+	const FString Ligne = Brut.TrimStartAndEnd();
+	if (Ligne.IsEmpty() || !Ligne.IsNumeric())
 	{
 		return;   // trame partielle ou bruit : on ignore, sans compter
 	}
@@ -140,8 +208,7 @@ void ULidarPresenceComponent::Lire()
 		if (!bPresent && CompteurProche >= ReleveseAvantPresence)
 		{
 			bPresent = true;
-			UE_LOG(LogGardeFrontiere, Log,
-				TEXT("Capteur : presence a %d cm"), Distance);
+			UE_LOG(LogGardeFrontiere, Log, TEXT("Capteur : presence a %d cm"), Distance);
 			OnPresenceDetectee.Broadcast();
 		}
 	}
@@ -153,8 +220,7 @@ void ULidarPresenceComponent::Lire()
 		if (bPresent && CompteurLoin >= ReleveseAvantAbsence)
 		{
 			bPresent = false;
-			UE_LOG(LogGardeFrontiere, Log,
-				TEXT("Capteur : zone liberee (%d cm)"), Distance);
+			UE_LOG(LogGardeFrontiere, Log, TEXT("Capteur : zone liberee (%d cm)"), Distance);
 			OnPresencePerdue.Broadcast();
 		}
 	}

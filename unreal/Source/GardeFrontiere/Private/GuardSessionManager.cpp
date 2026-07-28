@@ -92,6 +92,11 @@ void AGuardSessionManager::BeginPlay()
 
 void AGuardSessionManager::EndPlay(const EEndPlayReason::Type Raison)
 {
+	// Instrumentation : le gel survient a l'arret du PIE et resiste a trois
+	// correctifs. Ces traces designent l'etape exacte ou le thread se bloque
+	// — la derniere ligne ecrite est celle qui precede le blocage.
+	UE_LOG(LogGardeFrontiere, Warning, TEXT("ARRET 1/6 : debut EndPlay"));
+
 	// Ordre important : on coupe les sources d'evenements avant de detruire
 	// quoi que ce soit. Un evenement arrivant en pleine destruction fige le
 	// thread de jeu — ou pire, le fait planter.
@@ -99,20 +104,28 @@ void AGuardSessionManager::EndPlay(const EEndPlayReason::Type Raison)
 	{
 		Monde->GetTimerManager().ClearAllTimersForObject(this);
 	}
+	UE_LOG(LogGardeFrontiere, Warning, TEXT("ARRET 2/6 : minuteries annulees"));
 
 	if (Sidecar)
 	{
 		// Le lambda branche sur OnAudioRecu capture `this` : le detacher
 		// avant la destruction evite qu'une trame tardive n'y accede.
 		Sidecar->OnAudioRecu.Clear();
+		UE_LOG(LogGardeFrontiere, Warning, TEXT("ARRET 3/6 : delegue audio detache"));
+
 		Sidecar->Deconnecter();
 		Sidecar = nullptr;
 	}
+	UE_LOG(LogGardeFrontiere, Warning, TEXT("ARRET 4/6 : sidecar deconnecte"));
 
-	if (Voix)   { Voix->Interrompre(); }
+	if (Voix) { Voix->Interrompre(); }
+	UE_LOG(LogGardeFrontiere, Warning, TEXT("ARRET 5/6 : voix interrompue"));
+
 	if (Glitch) { Glitch->Arreter(); }
+	UE_LOG(LogGardeFrontiere, Warning, TEXT("ARRET 6/6 : glitch arrete"));
 
 	Super::EndPlay(Raison);
+	UE_LOG(LogGardeFrontiere, Warning, TEXT("ARRET : termine proprement"));
 }
 
 // -- Machine a etats -----------------------------------------------------

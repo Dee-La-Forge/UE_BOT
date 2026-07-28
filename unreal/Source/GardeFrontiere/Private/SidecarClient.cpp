@@ -53,15 +53,19 @@ void USidecarClient::Deconnecter()
 	Socket->OnMessage().Clear();
 	Socket->OnRawMessage().Clear();
 
+	UE_LOG(LogGardeFrontiere, Warning, TEXT("  Sidecar : delegues detaches"));
+
 	if (Socket->IsConnected())
 	{
 		Socket->Close();
+		UE_LOG(LogGardeFrontiere, Warning, TEXT("  Sidecar : Close() rendu"));
 	}
 
 	// On lache la reference sans attendre la poignee de fermeture : le
 	// sidecar est un processus distinct, rien ne garantit qu'il reponde
 	// dans le delai d'un arret de PIE.
 	Socket.Reset();
+	UE_LOG(LogGardeFrontiere, Warning, TEXT("  Sidecar : reference liberee"));
 }
 
 bool USidecarClient::EstConnecte() const

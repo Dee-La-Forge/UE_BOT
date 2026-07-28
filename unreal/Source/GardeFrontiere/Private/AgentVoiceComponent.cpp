@@ -77,11 +77,15 @@ void UAgentVoiceComponent::EmpilerTrame(const TArray<uint8>& PCM16, int32 Taux)
 
 void UAgentVoiceComponent::Interrompre()
 {
+	// Arreter AVANT de vider la file. ResetAudio prend un verrou que le
+	// thread de rendu audio detient aussi : le solliciter pendant que la
+	// lecture tourne est un interblocage classique.
+	Stop();
+
 	if (Flux)
 	{
 		Flux->ResetAudio();
 	}
-	Stop();
 
 	if (bParle)
 	{

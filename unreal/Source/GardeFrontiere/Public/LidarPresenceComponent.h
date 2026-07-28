@@ -104,6 +104,8 @@ private:
 	void OuvrirPort();
 	void FermerPort();
 	void Lire();
+	void TraiterReleve(const FString& Ligne);
+	void ProgrammerReconnexion();
 
 	UPROPERTY() TObjectPtr<USerialCom> Serie;
 
@@ -112,4 +114,17 @@ private:
 
 	int32 CompteurProche = 0;
 	int32 CompteurLoin = 0;
+
+	/**
+	 * Une lecture est en vol sur un thread de fond.
+	 *
+	 * USerialCom::ReadStringUntil contient un WaitForSingleObject de
+	 * 2 secondes, dans une boucle qui lit octet par octet. Appele depuis le
+	 * thread de jeu, il fige boutons et menus. On le deporte donc, et ce
+	 * drapeau evite d'empiler les lectures.
+	 */
+	TAtomic<bool> bLectureEnVol{false};
+
+	/** Espacement croissant des tentatives, pour ne pas saturer le journal. */
+	int32 TentativesEchouees = 0;
 };
