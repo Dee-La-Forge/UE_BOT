@@ -30,13 +30,36 @@ public:
 
 	// -- Liaison serie ---------------------------------------------------
 
-	/** COM5 sur la borne — releve dans le journal de l'ancien projet. */
+	/**
+	 * Numero du port serie de l'Arduino.
+	 *
+	 * A VERIFIER a chaque rebranchement : Windows reattribue le numero, et
+	 * le Gestionnaire de peripheriques fait foi (Ports COM et LPT →
+	 * "Arduino Uno (COMx)"). Un port absent se reconnait a l'erreur
+	 * 00000002, ERROR_FILE_NOT_FOUND.
+	 *
+	 * 4 le 28/07/2026, releve sur le materiel. La valeur precedente — 5 —
+	 * venait du journal de l'ancien projet et n'a jamais correspondu a rien.
+	 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Capteur|Liaison",
 		meta = (ClampMin = "1"))
-	int32 PortCOM = 5;
+	int32 PortCOM = 4;
 
+	/**
+	 * Vitesse de la liaison, en bauds.
+	 *
+	 * Contrairement au numero de port, elle ne derive pas : c'est le sketch
+	 * Arduino qui la fixe. Releve a l'oscilloscope logiciel le 28/07/2026 —
+	 * a 115200 les trames sont propres, un entier par ligne termine par \n,
+	 * ce qu'attend TraiterReleve. Aux autres vitesses on ne recoit que les
+	 * memes octets mal echantillonnes, que le decodage ecarte en silence.
+	 *
+	 * La valeur precedente — 9600 — venait elle aussi de l'ancien projet.
+	 * Le port s'ouvrait, aucune trame n'etait jamais lisible, et rien ne le
+	 * signalait.
+	 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Capteur|Liaison")
-	int32 VitesseBauds = 9600;
+	int32 VitesseBauds = 115200;
 
 	/** Delai avant nouvelle tentative d'ouverture du port. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Capteur|Liaison",
