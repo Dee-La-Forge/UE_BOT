@@ -33,6 +33,15 @@ public class GardeFrontiere : ModuleRules
 
 			// Lecture audio de la parole de l'agent
 			"AudioMixer",
+
+			// Convai n'est conserve que pour ses animations MetaHuman —
+			// AnimBP corps et visage, visemes, emotions, suivi du regard.
+			// La dependance est declaree ici pour une raison de build :
+			// ConvaiEditor la declare deja, mais UBT ne planifiait pas le
+			// module runtime pour autant, et l'edition de liens echouait
+			// sur UnrealEditor-Convai.lib introuvable. La declarer depuis
+			// un module du projet force sa construction.
+			"Convai",
 		});
 	}
 }
