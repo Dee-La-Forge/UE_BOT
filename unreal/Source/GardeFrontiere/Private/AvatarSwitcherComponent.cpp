@@ -18,24 +18,43 @@ void UAvatarSwitcherComponent::EndPlay(const EEndPlayReason::Type Raison)
 
 int32 UAvatarSwitcherComponent::Tirer() const
 {
-	const int32 N = ClassesAvatars.Num();
-	if (N <= 1)
+	// On ne tire QUE parmi les entrees renseignees.
+	//
+	// Un tableau de trois cases dont une seule est remplie faisait tomber
+	// le tirage sur une case vide deux fois sur trois — et aucun personnage
+	// n'apparaissait. C'est le defaut du Blueprint d'origine, que je
+	// reproduisais fidelement.
+	TArray<int32> Valides;
+	Valides.Reserve(ClassesAvatars.Num());
+	for (int32 i = 0; i < ClassesAvatars.Num(); ++i)
 	{
-		return 0;
+		if (ClassesAvatars[i])
+		{
+			Valides.Add(i);
+		}
 	}
 
-	int32 Index = FMath::RandRange(0, N - 1);
+	if (Valides.Num() == 0)
+	{
+		return INDEX_NONE;
+	}
+	if (Valides.Num() == 1)
+	{
+		IndexPrecedent = Valides[0];
+		return Valides[0];
+	}
 
 	// Avec trois avatars, un tirage libre redonne le meme une fois sur
 	// trois. On decale plutot que de retirer en boucle : temps constant,
-	// et distribution uniforme sur les N-1 restants.
-	if (bEviterRepetition && Index == IndexPrecedent)
+	// et distribution uniforme sur les autres.
+	int32 Rang = FMath::RandRange(0, Valides.Num() - 1);
+	if (bEviterRepetition && Valides[Rang] == IndexPrecedent)
 	{
-		Index = (IndexPrecedent + 1 + FMath::RandRange(0, N - 2)) % N;
+		Rang = (Rang + 1 + FMath::RandRange(0, Valides.Num() - 2)) % Valides.Num();
 	}
 
-	IndexPrecedent = Index;
-	return Index;
+	IndexPrecedent = Valides[Rang];
+	return IndexPrecedent;
 }
 
 void UAvatarSwitcherComponent::DetruireCourant()
@@ -49,12 +68,19 @@ void UAvatarSwitcherComponent::DetruireCourant()
 
 AActor* UAvatarSwitcherComponent::Permuter()
 {
-	if (ClassesAvatars.Num() == 0)
+	const int32 Index = Tirer();
+	if (Index == INDEX_NONE)
 	{
-		UE_LOG(LogGardeFrontiere, Error, TEXT("Avatars : aucune classe configuree"));
+		// Message explicite : un tableau non vide mais peuple de cases
+		// nulles produit exactement le meme symptome qu'un tableau vide —
+		// aucun personnage — et le diagnostic n'a rien d'evident.
+		UE_LOG(LogGardeFrontiere, Error,
+			TEXT("Avatars : aucune classe valide dans ClassesAvatars ")
+			TEXT("(%d entree(s), toutes vides). Assigner au moins BP_AgentGermain."),
+			ClassesAvatars.Num());
 		return nullptr;
 	}
-	return Spawner(Tirer());
+	return Spawner(Index);
 }
 
 AActor* UAvatarSwitcherComponent::Spawner(int32 Index)
