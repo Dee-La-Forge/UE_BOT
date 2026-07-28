@@ -228,6 +228,51 @@ int32 UAvatarSwitcherComponent::RetirerConvaiConversationnel(AActor* Avatar) con
 	return NbRetires;
 }
 
+USkeletalMeshComponent* UAvatarSwitcherComponent::TrouverMaillageCorps() const
+{
+	if (!AvatarCourant)
+	{
+		return nullptr;
+	}
+
+	TArray<USkeletalMeshComponent*> Maillages;
+	AvatarCourant->GetComponents<USkeletalMeshComponent>(Maillages);
+
+	for (USkeletalMeshComponent* M : Maillages)
+	{
+		if (M && M->GetName().Contains(TEXT("Body")))
+		{
+			return M;
+		}
+	}
+
+	// A defaut le premier : sur un MetaHuman, c'est la racine squelettique
+	// dont le visage et les grooms suivent la pose.
+	return Maillages.Num() > 0 ? Maillages[0] : nullptr;
+}
+
+void UAvatarSwitcherComponent::JouerAnimationCorps(UAnimationAsset* Animation, bool bBoucler)
+{
+	USkeletalMeshComponent* Corps = TrouverMaillageCorps();
+	if (!Corps)
+	{
+		UE_LOG(LogGardeFrontiere, Warning,
+			TEXT("Avatars : aucun maillage de corps — posture ignoree"));
+		return;
+	}
+
+	if (!Animation)
+	{
+		// Rendre la main a l'AnimBP plutot que de laisser l'agent fige sur
+		// la derniere pose. Le visage et les grooms suivent le corps : le
+		// figer les figerait tous.
+		Corps->SetAnimationMode(EAnimationMode::AnimationBlueprint);
+		return;
+	}
+
+	Corps->PlayAnimation(Animation, bBoucler);
+}
+
 USkeletalMeshComponent* UAvatarSwitcherComponent::TrouverMaillageFacial() const
 {
 	if (!AvatarCourant)

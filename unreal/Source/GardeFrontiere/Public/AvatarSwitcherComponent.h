@@ -15,6 +15,7 @@
 #include "Components/ActorComponent.h"
 #include "AvatarSwitcherComponent.generated.h"
 
+class UAnimationAsset;
 class USkeletalMeshComponent;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(
@@ -77,6 +78,19 @@ public:
 	/** Maillage facial de l'avatar courant, pour le composant d'expression. */
 	UFUNCTION(BlueprintPure, Category = "Avatars")
 	USkeletalMeshComponent* TrouverMaillageFacial() const;
+
+	/** Maillage du corps — celui que le visage et les grooms suivent. */
+	UFUNCTION(BlueprintPure, Category = "Avatars")
+	USkeletalMeshComponent* TrouverMaillageCorps() const;
+
+	/**
+	 * Impose une animation au corps de l'avatar courant.
+	 *
+	 * Nullptr rend la main a l'AnimBP du MetaHuman, plutot que de laisser
+	 * l'agent fige sur la derniere pose jouee.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Avatars")
+	void JouerAnimationCorps(UAnimationAsset* Animation, bool bBoucler = true);
 
 protected:
 	virtual void EndPlay(const EEndPlayReason::Type Raison) override;

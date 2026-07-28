@@ -17,6 +17,7 @@
 #include "GuardSessionTypes.h"
 #include "GuardSessionManager.generated.h"
 
+class UAnimationAsset;
 class USidecarClient;
 class ULidarPresenceComponent;
 class UAgentVoiceComponent;
@@ -50,6 +51,9 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(
 /** Repli parle quand l'IA est indisponible — la borne ne reste jamais muette. */
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(
 	FOnRepliqueDeSecours, const FString&, Texte);
+
+/** L'agent se met en posture d'ecoute, ou revient en garde. */
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnEcouteChangee, bool, bEcoute);
 
 
 UCLASS(Blueprintable, BlueprintType)
@@ -184,6 +188,31 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "Garde Frontiere|Evenements")
 	FOnRepliqueDeSecours OnRepliqueDeSecours;
 
+	UPROPERTY(BlueprintAssignable, Category = "Garde Frontiere|Evenements")
+	FOnEcouteChangee OnEcouteChangee;
+
+	// =====================================================================
+	// Postures
+	// =====================================================================
+
+	/**
+	 * Animation jouee quand un visiteur se presente.
+	 *
+	 * Une pose statique suffit — l'agent se tient face au poste, tete et yeux
+	 * droits. Aucun suivi du regard : le LiDAR ne rend qu'une distance,
+	 * jamais un angle, et l'agent ne saurait donc pas ou tourner la tete.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Garde Frontiere|Postures")
+	TObjectPtr<UAnimationAsset> AnimationEcoute;
+
+	/** Animation de retour en veille. Laisser vide pour rendre la main a l'AnimBP. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Garde Frontiere|Postures")
+	TObjectPtr<UAnimationAsset> AnimationVeille;
+
+	/** Vrai des qu'une session est ouverte. */
+	UPROPERTY(BlueprintReadOnly, Category = "Garde Frontiere|Etat")
+	bool bEnEcoute = false;
+
 	// =====================================================================
 	// Pilotage manuel — exploitation et mise au point
 	// =====================================================================
@@ -239,6 +268,12 @@ protected:
 
 private:
 	void ChangerPhase(EGuardPhase Nouvelle);
+
+	/** Pose l'agent selon bEnEcoute. Rejouee a chaque substitution d'avatar. */
+	void AppliquerPosture();
+
+	/** Signale la presence au sidecar — apres la substitution, jamais avant. */
+	void AmorcerDialogue();
 
 	// Reactions au capteur de presence
 	UFUNCTION() void SurPresenceDetectee();

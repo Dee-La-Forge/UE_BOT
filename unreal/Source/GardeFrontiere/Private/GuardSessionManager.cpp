@@ -169,6 +169,31 @@ void AGuardSessionManager::ChangerPhase(EGuardPhase Nouvelle)
 
 	Phase = Nouvelle;
 	OnPhaseChangee.Broadcast(Nouvelle);
+
+	// L'ecoute suit la session, pas le detail des phases : l'agent fait face
+	// au visiteur du moment ou il se presente jusqu'a ce qu'il parte. Une
+	// posture qui changerait a chaque phase donnerait un personnage agite.
+	const bool bEcouteVoulue = (Nouvelle != EGuardPhase::Veille);
+	if (bEcouteVoulue != bEnEcoute)
+	{
+		bEnEcoute = bEcouteVoulue;
+		AppliquerPosture();
+		OnEcouteChangee.Broadcast(bEnEcoute);
+	}
+}
+
+void AGuardSessionManager::AppliquerPosture()
+{
+	if (!Avatars)
+	{
+		return;
+	}
+
+	UAnimationAsset* Voulue = bEnEcoute ? AnimationEcoute.Get() : AnimationVeille.Get();
+
+	// Une case laissee vide rend la main a l'AnimBP du MetaHuman plutot que
+	// de figer l'agent sur la derniere pose jouee.
+	Avatars->JouerAnimationCorps(Voulue);
 }
 
 void AGuardSessionManager::DemarrerSession()
@@ -194,27 +219,26 @@ void AGuardSessionManager::DemarrerSession()
 	// Le glitch masque la substitution. La permutation elle-meme attend
 	// OnGlitchTermine — a defaut d'effet, on permute tout de suite plutot
 	// que de rester bloque.
+	//
+	// L'amorce du dialogue suit la substitution, jamais l'inverse : l'agent
+	// qui parle doit d'abord exister. Signaler la presence des maintenant
+	// faisait repondre le sidecar pendant que le glitch masquait encore la
+	// scene — la voix sortait d'un avatar pas encore spawne, donc sans
+	// lipsync possible, et le visiteur entendait parler un ecran brouille.
 	if (Glitch)
 	{
-		Glitch->Declencher();
-	}
-	else if (Avatars)
-	{
-		Avatars->Permuter();
-	}
-
-	OnSessionDemarree.Broadcast(IndexAvatarCourant);
-
-	if (Sidecar && Sidecar->EstConnecte())
-	{
-		Sidecar->SignalerPresence();
+		Glitch->Declencher();   // AmorcerDialogue() suivra SurGlitchTermine
 	}
 	else
 	{
-		// Mode degrade : la borne accueille quand meme.
-		OnRepliqueDeSecours.Broadcast(TEXT("Papiers. Garde-frontiere."));
+		if (Avatars)
+		{
+			Avatars->Permuter();
+		}
+		AmorcerDialogue();
 	}
 
+	OnSessionDemarree.Broadcast(IndexAvatarCourant);
 	ArmerAbandon();
 }
 
@@ -322,6 +346,23 @@ void AGuardSessionManager::SurGlitchTermine()
 	{
 		Avatars->Permuter();
 	}
+
+	// Et seulement maintenant, l'agent prend la parole — devant un visiteur
+	// qui le voit.
+	AmorcerDialogue();
+}
+
+void AGuardSessionManager::AmorcerDialogue()
+{
+	if (Sidecar && Sidecar->EstConnecte())
+	{
+		Sidecar->SignalerPresence();
+	}
+	else
+	{
+		// Mode degrade : la borne accueille quand meme.
+		OnRepliqueDeSecours.Broadcast(TEXT("Papiers. Garde-frontiere."));
+	}
 }
 
 void AGuardSessionManager::SurAvatarChange(AActor* NouvelAvatar, int32 Index)
@@ -334,6 +375,11 @@ void AGuardSessionManager::SurAvatarChange(AActor* NouvelAvatar, int32 Index)
 	{
 		Visage->CiblerMaillage(Avatars->TrouverMaillageFacial());
 	}
+
+	// Le nouvel avatar naît dans la pose de son AnimBP : il faut lui rendre
+	// la posture de la session en cours, sans quoi la substitution ferait
+	// repasser l'agent en position de garde devant un visiteur present.
+	AppliquerPosture();
 }
 
 void AGuardSessionManager::SurParoleDebut(const FString& Texte, EGuardEmotion Emotion)
