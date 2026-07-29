@@ -122,11 +122,28 @@ class Pipeline:
         # explicitement — Macerio ne repete jamais la reponse du visiteur.
         # Je l'avais ajoute avant de disposer du personnage, en croyant rendre
         # l'entretien conversationnel. C'etait le contraire de ce qu'il est.
+        # Les questions deja posees, litteralement.
+        #
+        # « Tu ne reposes jamais une question deja posee » ne suffit pas a un
+        # modele de 3 milliards de parametres : il faut le lui montrer. Sans
+        # cela, face a des reponses qu'il ne comprend pas, il rabache —
+        # releve en essai reel, cinq fois « pourquoi vis-tu ici » d'affilee.
+        deja = [agent for _, agent in self.historique if agent]
+        interdites = ""
+        if deja:
+            liste = "\n".join(f"  - {q}" for q in deja[-8:])
+            interdites = (
+                "\n[Tu as DEJA dit ceci. Ne le repete pas, ne le reformule "
+                f"pas, passe a autre chose :\n{liste}]"
+            )
+
         rappel = (
             "[Ce sur quoi porte le controle :\n"
             f"{sujets}\n"
             "Enchaine sur un point encore obscur, sans repeter ce qui vient "
-            "d'etre dit, sans reemployer une tournure deja utilisee.]"
+            "d'etre dit, sans reemployer une tournure deja utilisee.\n"
+            "VOUVOIE le visiteur : « vous », jamais « tu ».]"
+            f"{interdites}"
         )
 
         if e.nb_questions >= e.questions_max:

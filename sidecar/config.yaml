@@ -21,12 +21,19 @@ stt:
   peripherique: "cuda"
   type_calcul: "float16"
   langue: "fr"
-  # Le VAD amont (SileroVAD cote Unreal) fournit deja des segments propres,
-  # et la mesure le confirme : sur chaque tour, le journal de faster-whisper
-  # affiche « VAD filter removed 00:00.000 of audio ». Il n'a jamais rien
-  # trouve a retirer. C'etait donc une passe de detection payee pour rien,
-  # sur un signal deja borne par Silero puis elague cote Unreal.
-  vad_filtre: false
+  # REMIS A true le 29/07/2026, apres l'avoir coupe le matin meme.
+  #
+  # Je l'avais desactive en constatant « VAD filter removed 00:00.000 of
+  # audio » a chaque tour : il ne retirait rien, donc il paraissait inutile.
+  # C'etait mal lire ce que fait ce filtre. Il ne sert pas qu'a rogner les
+  # bords : il segmente le signal et concentre la transcription sur les
+  # regions de parole. Sans lui, Whisper transcrit tout le tampon, bruit
+  # compris, et comble les vides par ses hallucinations d'entrainement —
+  # « Merci d'avoir regarde », « C'est de l'eau, pas de maitres ».
+  #
+  # Une mesure qui montre zero n'est pas la preuve qu'un composant ne sert
+  # a rien : elle mesurait autre chose que ce qu'il fait.
+  vad_filtre: true
 
 llm:
   # llama.cpp server, lance separement — voir scripts/setup.ps1
