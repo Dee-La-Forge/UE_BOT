@@ -226,3 +226,30 @@ declare a la main entre en collision avec celui que genere UHT.
 
 Utiliser **`TPimplPtr`**, fait pour ce cas : il capture le destructeur a la
 construction, la ou le type est complet. Aucun destructeur a declarer.
+
+### Ne pas toucher aux phases de chargement d'ACE
+
+Deux tentatives, deux echecs. Consignes pour qu'on ne les refasse pas.
+
+| Modification | Resultat |
+|---|---|
+| `ACEGraphNode` : PreDefault → Default | aucun effet, erreur identique |
+| `AIMWrapper` : PreLoadingScreen → Default | **PLANTAGE au demarrage du moteur** |
+
+`AIMWrapper` initialise le framework d'inference NVIDIA, et quelque chose en
+depend avant la phase `Default`. Le decaler fait tomber l'editeur avant
+meme l'ecran de chargement.
+
+**Les phases de NVIDIA sont a laisser telles quelles.**
+
+### La voie qui reste pour ABP_MH_LiveLink
+
+Ne pas chercher a le faire compiler : couper ce qui le charge.
+
+Les trois avatars le referencent comme classe d'animation de leur maillage
+`Face`. Or `UAvatarSwitcherComponent::PreparerAudio2Face` impose
+`Face_AnimBP` a ce meme maillage des le spawn : la reference d'origine ne
+sert plus qu'a faire charger un asset casse au demarrage de l'editeur.
+
+Remplacer `ABP_MH_LiveLink` par `Face_AnimBP` dans les trois Blueprints
+d'avatar, et plus rien ne le chargera.
