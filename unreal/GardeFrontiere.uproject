@@ -16,9 +16,14 @@
 			"Enabled": true
 		},
 		{
-			"_comment": "Conserve pour ses animations MetaHuman : AnimBP corps et visage, 25 poses de visemes MHF_*, 16 poses d'emotions, suivi du regard. La couche reseau, elle, est remplacee par le sidecar local.",
+			"_comment": "Conserve pour ses seules animations MetaHuman : AnimBP de corps et de visage, et 16 poses d'emotions. NI visemes NI suivi du regard, contrairement a ce que disait ce commentaire — Convai_MetaHuman_FaceAnim n'expose aucune variable MHF_*, il pilote des courbes CTRL_expressions_* et embarque son propre systeme de visemes, alimente par le ConvaiChatbotComponent qui a ete retire. Le lipsync viendra d'Audio2Face par LiveLink. La couche reseau, elle, est remplacee par le sidecar local.",
 			"Name": "ConvAI",
 			"Enabled": true
+		},
+		{
+			"_comment": "Actif par defaut dans le moteur, desactive ici : il regenere a chaque lancement une section AndroidFileServer dans DefaultEngine.ini, avec un jeton de securite en clair. Configuration Android dans une borne Windows — inutile, et inutilement exposee. La retirer du .ini ne suffit pas, seule cette ligne l'empeche de revenir.",
+			"Name": "AndroidFileServer",
+			"Enabled": false
 		},
 		{
 			"Name": "LiveLink",
