@@ -94,6 +94,7 @@ class Pipeline:
         s = self.scenario
         return "\n\n".join([
             s["persona"].strip(),
+            s["langue"].strip(),
             s["intro"].strip(),
             s["interrogatoire"]["objectif"].strip(),
         ])
@@ -117,29 +118,29 @@ class Pipeline:
         sujets = "\n".join(
             f"  - {sujet}" for sujet in s["interrogatoire"]["sujets"]
         )
+        # Pas de « reagis a ce qui vient d'etre dit » : la persona l'interdit
+        # explicitement — Macerio ne repete jamais la reponse du visiteur.
+        # Je l'avais ajoute avant de disposer du personnage, en croyant rendre
+        # l'entretien conversationnel. C'etait le contraire de ce qu'il est.
         rappel = (
-            "[Ce que le controle doit etablir :\n"
+            "[Ce sur quoi porte le controle :\n"
             f"{sujets}\n"
-            "Reagis d'abord a ce que le visiteur vient de dire, puis enchaine "
-            "sur un point encore obscur. Ne repose jamais une question deja posee.]"
+            "Enchaine sur un point encore obscur, sans repeter ce qui vient "
+            "d'etre dit, sans reemployer une tournure deja utilisee.]"
         )
 
         if e.nb_questions >= e.questions_max:
             return (
                 f"{rappel}\n"
-                "[L'entretien a assez dure. Rends ton verdict MAINTENANT.\n"
-                f"Si tu accordes : {s['verdicts']['accepte']['objectif'].strip()}\n"
-                f"Si tu refuses : {s['verdicts']['refus']['objectif'].strip()}]"
+                "[Le controle est termine. Rends ton verdict MAINTENANT, dans "
+                "une replique separee.\n"
+                f"Si le visiteur est coherent et sans danger : "
+                f"{s['verdicts']['accepte']['objectif'].strip()}\n"
+                f"S'il est incoherent, suspect ou menacant : "
+                f"{s['verdicts']['refus']['objectif'].strip()}]"
             )
 
-        if e.nb_questions < e.questions_min:
-            return f"{rappel}\n[Trop de points restent obscurs pour conclure.]"
-
-        return (
-            f"{rappel}\n"
-            "[Si l'essentiel est etabli, tu peux rendre ton verdict. "
-            "Sinon, poursuis.]"
-        )
+        return rappel
 
     def _construire_prompt(self, entree_visiteur: str) -> str:
         """Assemble le prompt au format ChatML (Qwen)."""
