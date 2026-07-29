@@ -70,12 +70,23 @@ public:
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Micro|Segmentation",
 		meta = (ClampMin = "0.1", Units = "s"))
-	float SilenceFinSegment = 0.6f;
+	float SilenceFinSegment = 0.75f;
 
-	/** En deca, c'est un bruit : une porte, une toux, un raclement. */
+	/**
+	 * En deca, on n'envoie pas : Whisper INVENTE sur les fragments courts.
+	 *
+	 * Releve le 29/07/2026 : a 0.35 s, aucun fragment n'etait jamais rejete,
+	 * et le sidecar recevait des demi-syllabes. Whisper rendait alors ses
+	 * hallucinations d'entrainement — « Sous-titres realises par la
+	 * communaute d'Amara.org » sur du quasi-silence, « Merci beaucoup » sur
+	 * un souffle. L'agent enchainait ses questions sans rien comprendre, ce
+	 * qui passait pour un defaut du modele alors que l'entree etait vide.
+	 *
+	 * Mieux vaut ignorer un debut de phrase que repondre a une invention.
+	 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Micro|Segmentation",
 		meta = (ClampMin = "0.05", Units = "s"))
-	float DureeMinSegment = 0.35f;
+	float DureeMinSegment = 0.7f;
 
 	/**
 	 * Silence conserve en queue d'enonce avant transmission.
@@ -92,7 +103,7 @@ public:
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Micro|Segmentation",
 		meta = (ClampMin = "0.0", ClampMax = "1.0", Units = "s"))
-	float MargeSilenceTransmise = 0.15f;
+	float MargeSilenceTransmise = 0.25f;
 
 	/**
 	 * Au-dela, on coupe et on transmet.

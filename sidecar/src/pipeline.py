@@ -22,8 +22,12 @@ from pathlib import Path
 import numpy as np
 import yaml
 
+import logging
+
 from .llm import ClientLLM, Replique
 from .machine_etats import Phase, SessionEtat
+
+_log = logging.getLogger("sidecar.pipeline")
 from .metrics import Mesure
 from .stt import Transcripteur
 from .texte import nettoyer_pour_tts
@@ -153,6 +157,14 @@ class Pipeline:
         texte_visiteur = self.stt.transcrire(audio_visiteur, taux)
         m.marquer("stt_fin")
 
+        # Journalise, parce que sans cela on ne peut pas distinguer un LLM qui
+        # repond mal d'un LLM qui recoit du charabia. C'est le meme angle mort
+        # qui a masque, tour a tour, une liaison serie muette, des courbes
+        # faciales ecrites dans le vide et un flux audio fragmente.
+        _log.info("visiteur (%.2f s) : %s",
+                  audio_visiteur.size / max(taux, 1),
+                  texte_visiteur if texte_visiteur else "(rien compris)")
+
         if not texte_visiteur:
             yield Replique(
                 texte=self.scenario["repli"]["incompris"],
@@ -249,6 +261,9 @@ class Pipeline:
             (texte_visiteur or "[Le visiteur se presente au poste.]", finale.texte)
         )
         self.etat.avancer(finale.verdict)
+
+        _log.info("agent [%s/%s, %d question(s)] : %s",
+                  finale.emotion, finale.verdict, self.etat.nb_questions, finale.texte)
 
         yield finale
 

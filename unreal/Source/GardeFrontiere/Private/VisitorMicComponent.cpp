@@ -214,11 +214,13 @@ void UVisitorMicComponent::FermerSegment()
 	}
 	else if (Segment.Num() > 0)
 	{
-		// Silencieux dans le journal courant : une borne d'exposition capte
-		// des dizaines de bruits brefs par heure, et les tracer tous noierait
-		// le reste.
-		UE_LOG(LogGardeFrontiere, Verbose,
-			TEXT("Micro : bruit de %.2f s ignore (minimum %.2f s)"), Duree, DureeMinSegment);
+		// En Log et non en Verbose. Le rejet etait invisible, et j'ai cru
+		// pendant un temps qu'aucun fragment n'etait ecarte — alors que le
+		// seuil etait simplement trop bas pour en ecarter un seul. Un rejet
+		// qui ne se voit pas ne se regle pas.
+		UE_LOG(LogGardeFrontiere, Log,
+			TEXT("Micro : fragment de %.2f s ignore (minimum %.2f s) — trop court pour Whisper"),
+			Duree, DureeMinSegment);
 	}
 
 	Segment.Reset();
