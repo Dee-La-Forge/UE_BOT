@@ -103,6 +103,19 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Garde Frontiere|Sidecar")
 	FString UrlSidecar = TEXT("ws://127.0.0.1:8765");
 
+	/**
+	 * Fournisseur Audio2Face. Laisser vide pour prendre le local disponible.
+	 *
+	 * Le defaut du plugin est "RemoteA2F", qui tente de joindre le cloud
+	 * NVIDIA et echoue au bout de dix secondes. Une borne d'exposition n'a
+	 * pas de reseau et n'en veut pas : on cherche donc un fournisseur dont
+	 * le nom commence par "LocalA2F" — les modeles s'enregistrent ainsi,
+	 * "LocalA2F-James" pour celui-ci, et seulement s'ils ont pu charger
+	 * leurs poids. Leur presence vaut donc test de disponibilite.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Garde Frontiere|Audio2Face")
+	FName FournisseurA2F;
+
 	// La rotation d'avatars appartient a UAvatarSwitcherComponent :
 	// selectionne le composant "Avatars" pour regler ClassesAvatars,
 	// TransformSpawn et l'anti-repetition.

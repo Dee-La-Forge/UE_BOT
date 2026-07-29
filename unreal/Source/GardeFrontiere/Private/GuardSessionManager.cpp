@@ -12,6 +12,7 @@
 
 #include "A2XSession.h"
 #include "A2FProvider.h"
+#include "ACEBlueprintLibrary.h"
 #include "ACERuntimeModule.h"
 #include "AudioBridge.h"
 #include "TimerManager.h"
@@ -456,11 +457,40 @@ bool AGuardSessionManager::OuvrirSessionA2F(int32 Taux)
 		return false;   // pas d'avatar, ou plugin absent : repli sur Voix
 	}
 
-	IA2FProvider* Fournisseur = GetProviderFromName(GetDefaultProviderName());
+	// Le fournisseur par defaut du plugin est "RemoteA2F" : il tente de
+	// joindre le cloud NVIDIA et refuse la session au bout de dix secondes
+	// d'attente. Une borne d'exposition n'a pas de reseau, et n'en veut pas.
+	//
+	// On cherche donc un fournisseur LOCAL. Les modeles s'enregistrent sous
+	// "LocalA2F-<nom>" — et seulement s'ils ont pu charger leurs poids : en
+	// trouver un vaut donc test de disponibilite.
+	FName Nom = FournisseurA2F;
+
+	if (Nom.IsNone())
+	{
+		for (const FName& Candidat : UACEBlueprintLibrary::GetAvailableA2FProviderNames())
+		{
+			if (Candidat.ToString().StartsWith(TEXT("LocalA2F")))
+			{
+				Nom = Candidat;
+				break;
+			}
+		}
+	}
+
+	if (Nom.IsNone())
+	{
+		UE_LOG(LogGardeFrontiere, Warning,
+			TEXT("Audio2Face : aucun fournisseur local — le plugin de modele ")
+			TEXT("(NvAudio2FaceJames) est-il installe et ses poids charges ?"));
+		return false;
+	}
+
+	IA2FProvider* Fournisseur = GetProviderFromName(Nom);
 	if (!Fournisseur)
 	{
 		UE_LOG(LogGardeFrontiere, Warning,
-			TEXT("Audio2Face : aucun fournisseur — le modele est-il installe ?"));
+			TEXT("Audio2Face : fournisseur '%s' introuvable"), *Nom.ToString());
 		return false;
 	}
 
@@ -476,7 +506,8 @@ bool AGuardSessionManager::OuvrirSessionA2F(int32 Taux)
 	}
 
 	TauxSessionA2F = Taux;
-	UE_LOG(LogGardeFrontiere, Log, TEXT("Audio2Face : session ouverte a %d Hz"), Taux);
+	UE_LOG(LogGardeFrontiere, Log,
+		TEXT("Audio2Face : session ouverte a %d Hz sur '%s'"), Taux, *Nom.ToString());
 	return true;
 }
 
