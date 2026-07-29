@@ -47,12 +47,31 @@ void AGuardSessionManager::BeginPlay()
 	Sidecar->OnSessionTerminee.AddDynamic(this, &AGuardSessionManager::SurSessionTerminee);
 	Sidecar->OnPanne.AddDynamic(this, &AGuardSessionManager::SurPanneIA);
 
+	// L'emotion definitive arrive APRES la replique, une fois le tag lu en
+	// fin de generation. Personne ne s'y abonnait : le visage restait sur
+	// l'emotion pressentie (« Stare ») envoyee avec parole.debut, et tout le
+	// mecanisme Angry/Concerned/Happy des grammaires se perdait en route.
+	Sidecar->OnEmotion.AddDynamic(this, &AGuardSessionManager::SurEmotion);
+
 	// Les trames audio arrivent en binaire, hors du systeme de delegues
 	// Blueprint : trop volumineuses pour y transiter. On les route
 	// directement vers la voix.
 	Sidecar->OnAudioRecu.AddLambda(
 		[this](const TArray<uint8>& PCM16, int32 Taux)
 		{
+			// Hors replique, on ne joue RIEN — ni Audio2Face ni repli. Une
+			// trame arrivant apres parole.fin, ou apres la fin de session,
+			// est un reliquat de la replique close : la jouer par la voix de
+			// repli pendant qu'ACE finit la precedente superposait deux
+			// lectures — exactement les deux voix que bRepliqueEnCours doit
+			// empecher. OuvrirSessionA2F posait deja ce garde, mais son
+			// `false` etait indistinguable d'un « A2F absent », et le repli
+			// jouait la trame sans condition.
+			if (!bRepliqueEnCours || Phase == EGuardPhase::Veille)
+			{
+				return;
+			}
+
 			// Audio2Face d'abord : son composant JOUE le son en plus d'animer
 			// le visage. Empiler la meme trame dans Voix ferait parler l'agent
 			// deux fois, avec un decalage.
@@ -357,6 +376,11 @@ void AGuardSessionManager::TransmettreParoleVisiteur(
 
 		Sidecar->EnvoyerAudioVisiteur(PCM16);
 		ArmerAbandon();   // le visiteur parle : on repousse l'abandon
+
+		// Meme surveillance qu'a l'ouverture : un enonce transmis doit
+		// produire une replique dans un delai borne, sinon le sidecar est
+		// considere mort malgre sa socket ouverte.
+		ArmerSurveillanceIA();
 	}
 	else
 	{
@@ -574,6 +598,13 @@ void AGuardSessionManager::OuvrirLaScene()
 	if (Sidecar && Sidecar->EstConnecte())
 	{
 		Sidecar->SignalerPresence();
+
+		// La panne n'etait detectee qu'au niveau CONNEXION. Un sidecar gele
+		// — processus bloque, socket TCP restee ouverte — laissait
+		// EstConnecte() vrai pour toujours : chaque visiteur affrontait
+		// DelaiAbandon secondes de silence total, sans jamais basculer en
+		// mode degrade. On attend donc une reponse dans un delai borne.
+		ArmerSurveillanceIA();
 	}
 	else
 	{
@@ -601,7 +632,22 @@ void AGuardSessionManager::SurAvatarChange(AActor* NouvelAvatar, int32 Index)
 
 void AGuardSessionManager::SurParoleDebut(const FString& Texte, EGuardEmotion Emotion)
 {
+	// Evenement en vol au moment du depart du visiteur : le session.reset de
+	// TerminerSession croise ce que le sidecar avait deja mis sur la socket.
+	// Sans ce garde, un parole.debut tardif remettait bRepliqueEnCours a
+	// vrai en Veille — et l'agent jouait la replique du visiteur parti
+	// devant une zone vide.
+	if (Phase == EGuardPhase::Veille)
+	{
+		UE_LOG(LogGardeFrontiere, Warning,
+			TEXT("parole.debut recu en veille — evenement tardif ignore"));
+		return;
+	}
+
 	bIADisponible = true;
+
+	// Le sidecar vient de repondre : la surveillance a rempli son office.
+	AnnulerSurveillanceIA();
 
 	// Nouvelle replique : on clot le flux precedent s'il en restait un, puis
 	// on autorise l'ouverture d'un nouveau. Hors de cette fenetre, aucune
@@ -632,6 +678,11 @@ void AGuardSessionManager::SurParoleDebut(const FString& Texte, EGuardEmotion Em
 
 void AGuardSessionManager::SurParoleFin()
 {
+	if (Phase == EGuardPhase::Veille)
+	{
+		return;   // evenement tardif : la session est deja close
+	}
+
 	// La replique est finie : on ferme, et il FAUT fermer ici.
 	//
 	// EndAudioSamples est ce qui vide la file. A2XSession retient les
@@ -647,6 +698,16 @@ void AGuardSessionManager::SurParoleFin()
 
 void AGuardSessionManager::SurVerdict(EGuardVerdict Decision)
 {
+	// Un verdict en vol au depart du visiteur arrivait apres TerminerSession
+	// et refabriquait une phase Verdict sans visiteur ni minuterie : borne
+	// figee, visiteur suivant ignore jusqu'a ce qu'un depart la debloque.
+	if (Phase == EGuardPhase::Veille)
+	{
+		UE_LOG(LogGardeFrontiere, Warning,
+			TEXT("verdict recu en veille — evenement tardif ignore"));
+		return;
+	}
+
 	DernierVerdict = Decision;
 	ChangerPhase(EGuardPhase::Verdict);
 
@@ -655,10 +716,22 @@ void AGuardSessionManager::SurVerdict(EGuardVerdict Decision)
 		Tampons->AfficherVerdict(Decision);
 	}
 	OnVerdictRendu.Broadcast(Decision);
+
+	// Filet : si le session.terminee qui doit suivre se perdait, aucune
+	// minuterie n'etait armee sur ce chemin et la borne restait en Verdict
+	// jusqu'au depart du visiteur suivant.
+	ArmerAbandon();
 }
 
 void AGuardSessionManager::SurSessionTerminee()
 {
+	if (Phase == EGuardPhase::Veille)
+	{
+		// Tardif : armer la sortie ferait afficher « quittez la zone »
+		// devant un hall vide, puis glitch et permutation gratuits.
+		return;
+	}
+
 	// On laisse le visiteur lire son tampon avant de le prier de sortir.
 	if (UWorld* Monde = GetWorld())
 	{
@@ -666,6 +739,20 @@ void AGuardSessionManager::SurSessionTerminee()
 			MinuterieSortie, this, &AGuardSessionManager::SurDelaiSortie,
 			FMath::Max(DelaiAvantSortie, 0.01f), false);
 	}
+}
+
+void AGuardSessionManager::SurEmotion(EGuardEmotion Emotion)
+{
+	if (Phase == EGuardPhase::Veille)
+	{
+		return;
+	}
+
+	if (Visage)
+	{
+		Visage->AppliquerEmotion(Emotion);
+	}
+	OnEmotionChangee.Broadcast(Emotion);
 }
 
 void AGuardSessionManager::SurDelaiSortie()
@@ -713,6 +800,45 @@ void AGuardSessionManager::TenterReconnexion()
 	}
 }
 
+// -- Surveillance applicative du sidecar ----------------------------------
+
+void AGuardSessionManager::ArmerSurveillanceIA()
+{
+	if (UWorld* Monde = GetWorld())
+	{
+		Monde->GetTimerManager().SetTimer(
+			MinuterieSurveillanceIA, this, &AGuardSessionManager::SurSilenceIA,
+			FMath::Max(DelaiReponseSidecar, 2.f), false);
+	}
+}
+
+void AGuardSessionManager::AnnulerSurveillanceIA()
+{
+	if (UWorld* Monde = GetWorld())
+	{
+		Monde->GetTimerManager().ClearTimer(MinuterieSurveillanceIA);
+	}
+}
+
+void AGuardSessionManager::SurSilenceIA()
+{
+	if (!Sidecar)
+	{
+		return;
+	}
+
+	UE_LOG(LogGardeFrontiere, Error,
+		TEXT("Sidecar : connecte mais muet depuis %.0f s — connexion consideree morte"),
+		DelaiReponseSidecar);
+
+	// Fermer la socket zombie, puis derouler exactement le chemin d'une
+	// panne de connexion : replique de secours si un visiteur est la, et
+	// boucle de reconnexion — qui retombera sur OnConnectionError tant que
+	// le processus Python ne repond pas.
+	Sidecar->Deconnecter();
+	SurPanneIA(TEXT("sidecar muet (delai de reponse depasse)"));
+}
+
 // -- Minuteries ----------------------------------------------------------
 
 void AGuardSessionManager::ArmerAbandon()
@@ -738,6 +864,7 @@ void AGuardSessionManager::AnnulerMinuteries()
 		FTimerManager& T = Monde->GetTimerManager();
 		T.ClearTimer(MinuterieAbandon);
 		T.ClearTimer(MinuterieSortie);
+		T.ClearTimer(MinuterieSurveillanceIA);
 
 		// PAS MinuterieReconnexion : elle n'appartient pas a la session.
 		// L'effacer ici tuait la boucle de reconnexion pour de bon — la

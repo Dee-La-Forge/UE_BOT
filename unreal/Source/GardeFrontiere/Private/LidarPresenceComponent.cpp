@@ -163,6 +163,19 @@ void ULidarPresenceComponent::FermerPort()
 
 void ULidarPresenceComponent::Lire()
 {
+	// Une seule lecture en vol a la fois : USerialCom lit octet par octet
+	// et peut attendre jusqu'a 2 secondes par octet. En empiler plusieurs
+	// saturerait le pool de threads.
+	//
+	// Teste AVANT le diagnostic de liaison : fermer le port pendant qu'une
+	// lecture court encore sur le thread de fond serait un acces a un
+	// handle clos. Si la liaison est vraiment morte, on la constatera au
+	// cycle suivant, la lecture en vol rendue.
+	if (bLectureEnVol.Load())
+	{
+		return;
+	}
+
 	if (!Serie || !Serie->IsOpened())
 	{
 		UE_LOG(LogGardeFrontiere, Warning, TEXT("Capteur : liaison perdue"));
@@ -183,17 +196,17 @@ void ULidarPresenceComponent::Lire()
 		return;
 	}
 
-	// Une seule lecture en vol a la fois : USerialCom lit octet par octet
-	// et peut attendre jusqu'a 2 secondes par octet. En empiler plusieurs
-	// saturerait le pool de threads.
-	if (bLectureEnVol.Load())
-	{
-		return;
-	}
 	bLectureEnVol.Store(true);
 
 	TWeakObjectPtr<ULidarPresenceComponent> Faible(this);
 	USerialCom* Port = Serie;
+
+	// Le port reste ancre tant que la lecture est en vol. FermerPort (arret,
+	// liaison perdue) lache la seule reference UPROPERTY : sans cet ancrage,
+	// le GC pouvait detruire l'objet PENDANT que le thread de fond etait
+	// dans Readln — lecture sur memoire liberee, crash ou gel. AddToRoot et
+	// RemoveFromRoot s'executent tous deux sur le thread de jeu.
+	Port->AddToRoot();
 
 	// Le WaitForSingleObject de 2 s du plugin figerait boutons et menus s'il
 	// s'executait ici. On le deporte, et on ne revient sur le thread de jeu
@@ -235,8 +248,12 @@ void ULidarPresenceComponent::Lire()
 			}
 
 			AsyncTask(ENamedThreads::GameThread,
-				[Faible, Derniere, NbLues]()
+				[Faible, Port, Derniere, NbLues]()
 				{
+					// La lecture est rendue : le port peut repartir au GC.
+					// Inconditionnel — meme si le composant a disparu.
+					Port->RemoveFromRoot();
+
 					ULidarPresenceComponent* Comp = Faible.Get();
 					if (!Comp)
 					{
@@ -244,7 +261,9 @@ void ULidarPresenceComponent::Lire()
 					}
 					Comp->bLectureEnVol.Store(false);
 
-					if (!Derniere.IsEmpty())
+					// Le port a pu etre ferme et rouvert pendant la lecture :
+					// un releve d'une liaison morte n'a plus de valeur.
+					if (Comp->Serie == Port && !Derniere.IsEmpty())
 					{
 						Comp->MesuresParCycle = NbLues;
 						Comp->TraiterReleve(Derniere);

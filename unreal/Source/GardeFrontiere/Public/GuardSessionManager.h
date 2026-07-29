@@ -200,6 +200,24 @@ public:
 		meta = (ClampMin = "1.0", Units = "s"))
 	float DelaiReconnexion = 5.f;
 
+	/**
+	 * Delai maximal entre une sollicitation du sidecar et sa reponse.
+	 *
+	 * La perte de CONNEXION est detectee par la socket, mais un sidecar gele
+	 * — processus bloque, socket TCP restee ouverte — passait inapercu :
+	 * EstConnecte() restait vrai, la replique de secours (qui exige une
+	 * deconnexion) ne partait jamais, et chaque visiteur affrontait
+	 * DelaiAbandon secondes de silence, indefiniment.
+	 *
+	 * Armee a l'envoi de presence.detectee et de chaque enonce ; desarmee
+	 * par le parole.debut qui repond. 10 s couvre largement le pire tour
+	 * mesure (STT + LLM + TTS ~2,5 s) sans condamner un simple pic de
+	 * charge GPU.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Garde Frontiere|Sidecar",
+		meta = (ClampMin = "2.0", Units = "s"))
+	float DelaiReponseSidecar = 10.f;
+
 	// =====================================================================
 	// Etat
 	// =====================================================================
@@ -399,6 +417,7 @@ private:
 	UFUNCTION() void SurParoleFin();
 	UFUNCTION() void SurVerdict(EGuardVerdict Decision);
 	UFUNCTION() void SurSessionTerminee();
+	UFUNCTION() void SurEmotion(EGuardEmotion Emotion);
 	UFUNCTION() void SurPanneIA(const FString& Raison);
 
 	// Minuteries
@@ -408,9 +427,16 @@ private:
 	UFUNCTION() void SurDelaiSortie();
 	UFUNCTION() void TenterReconnexion();
 
+	// Surveillance applicative : le sidecar doit repondre, pas seulement
+	// rester connecte.
+	void ArmerSurveillanceIA();
+	void AnnulerSurveillanceIA();
+	UFUNCTION() void SurSilenceIA();
+
 	FTimerHandle MinuterieAbandon;
 	FTimerHandle MinuterieSortie;
 	FTimerHandle MinuterieReconnexion;
+	FTimerHandle MinuterieSurveillanceIA;
 
 	/** Distincte des cles du capteur, pour que les deux messages coexistent. */
 	static constexpr uint64 CleAffichagePhase = 8810;

@@ -257,39 +257,60 @@ class Pipeline:
         grammaire = self.etat.grammaire
         premier = True
         finale: Replique | None = None
+        prononcees: list[str] = []
 
-        async for phrase, replique in self.llm.phrases(prompt, grammaire):
-            if replique is not None:
-                finale = replique
-                break
+        try:
+            async for phrase, replique in self.llm.phrases(prompt, grammaire):
+                if replique is not None:
+                    finale = replique
+                    break
 
-            if premier:
-                m.marquer("llm_premier_token")
-                m.marquer("llm_premiere_phrase")
+                if premier:
+                    m.marquer("llm_premier_token")
+                    m.marquer("llm_premiere_phrase")
 
-            # Filtre deterministe : un 3B produit de l'ecriture inclusive et
-            # du markdown malgre la consigne, et le TTS les prononce.
-            prononcable = nettoyer_pour_tts(phrase)
-            if not prononcable:
-                continue
+                # Filtre deterministe : un 3B produit de l'ecriture inclusive et
+                # du markdown malgre la consigne, et le TTS les prononce.
+                prononcable = nettoyer_pour_tts(phrase)
+                if not prononcable:
+                    continue
 
-            # Meme regle que pour le STT : Piper est synchrone, on le sort
-            # de l'event loop pour que le sidecar reste joignable pendant
-            # qu'il parle.
-            parole = await asyncio.to_thread(self.tts.synthetiser, prononcable)
+                # Meme regle que pour le STT : Piper est synchrone, on le sort
+                # de l'event loop pour que le sidecar reste joignable pendant
+                # qu'il parle.
+                parole = await asyncio.to_thread(self.tts.synthetiser, prononcable)
 
-            if premier:
-                m.marquer("tts_premier_chunk")
-                m.marquer("audio_premier_chunk")
+                if premier:
+                    m.marquer("tts_premier_chunk")
+                    m.marquer("audio_premier_chunk")
 
-            yield MorceauAudio(
-                pcm=parole.pcm,
-                taux=parole.taux,
-                texte=prononcable,
-                premier=premier,
-                visemes=parole.visemes,
-            )
-            premier = False
+                yield MorceauAudio(
+                    pcm=parole.pcm,
+                    taux=parole.taux,
+                    texte=prononcable,
+                    premier=premier,
+                    visemes=parole.visemes,
+                )
+                premier = False
+                prononcees.append(prononcable)
+
+        except Exception:
+            # Le LLM tombe EN COURS de generation, apres que des phrases ont
+            # deja ete jouees. Ce que l'agent a dit est dit : sans cette
+            # inscription, le prompt du tour suivant l'ignorait — l'agent
+            # reposait sa question, et le compteur divergeait de ce que le
+            # visiteur avait reellement vecu.
+            if prononcees:
+                self.historique.append((
+                    texte_visiteur or "[Le visiteur se presente au poste.]",
+                    " ".join(prononcees),
+                ))
+                self.etat.avancer("EN_COURS")
+                _log.warning(
+                    "generation interrompue apres %d phrase(s) — historique conserve",
+                    len(prononcees),
+                )
+            raise
 
         m.marquer("fin")
 

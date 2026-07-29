@@ -19,6 +19,7 @@ import json
 import logging
 from pathlib import Path
 
+import httpx
 import numpy as np
 import websockets
 from websockets.asyncio.server import ServerConnection, serve
@@ -55,6 +56,13 @@ class Serveur:
 
         self._tache_intro: asyncio.Task | None = None
 
+        # Tours de parole en cours ou en attente du verrou. Lances en taches
+        # pour que la boucle de reception reste libre : avant, `await
+        # _traiter_audio` la bloquait pendant tout un tour (STT + LLM + TTS,
+        # plusieurs secondes) et le presence.perdue d'un visiteur parti
+        # n'etait lu qu'apres — l'agent finissait sa replique dans le vide.
+        self._taches_parole: set[asyncio.Task] = set()
+
     # -- Emission ---------------------------------------------------------
 
     @staticmethod
@@ -73,38 +81,74 @@ class Serveur:
         )
         await ws.send(self.pipeline.tts.en_pcm16(m.pcm))
 
+    async def _dire(self, ws: ServerConnection, texte: str,
+                    emotion: str = "Neutral") -> None:
+        """Synthetise et streame une replique complete, hors pipeline LLM."""
+        # to_thread : Piper est synchrone, et le laisser dans l'event loop
+        # rendrait le sidecar sourd pendant la synthese.
+        parole = await asyncio.to_thread(self.pipeline.tts.synthetiser, texte)
+        await self._envoyer(ws, "parole.debut", texte=texte, emotion=emotion)
+        await self._envoyer_audio(
+            ws,
+            MorceauAudio(pcm=parole.pcm, taux=parole.taux, texte=texte,
+                         premier=True),
+            seq=0,
+        )
+        await self._envoyer(ws, "parole.fin")
+
     async def _replique_de_repli(self, ws: ServerConnection, cle: str) -> None:
         """Fait parler l'agent malgre une panne, plutot que de le laisser muet."""
         texte = self._repli.get(cle, self._repli.get("indisponible", ""))
         if not texte:
             return
         try:
-            # to_thread : Piper est synchrone, et le laisser dans l'event
-            # loop rendrait le sidecar sourd pendant la synthese.
-            parole = await asyncio.to_thread(self.pipeline.tts.synthetiser, texte)
-            await self._envoyer(ws, "parole.debut", texte=texte, emotion="Neutral")
-            await self._envoyer_audio(
-                ws,
-                MorceauAudio(pcm=parole.pcm, taux=parole.taux, texte=texte,
-                             premier=True),
-                seq=0,
-            )
-            await self._envoyer(ws, "parole.fin")
+            await self._dire(ws, texte)
+        except websockets.ConnectionClosed:
+            # Unreal est parti : plus personne a qui parler, et surtout pas
+            # de second envoi sur une socket morte.
+            _log.info("repli impossible : connexion fermee")
         except Exception:
             # Le TTS lui-meme est tombe : on previent, Unreal affichera
             # son propre repli. Une borne muette reste preferable a une
             # borne gelee.
             _log.exception("repli TTS indisponible")
-            await self._envoyer(ws, "erreur", code="tts_indisponible", repli=texte)
+            try:
+                await self._envoyer(ws, "erreur", code="tts_indisponible", repli=texte)
+            except websockets.ConnectionClosed:
+                pass   # la socket est morte aussi : rien de plus a faire
 
     # -- Tour de parole ---------------------------------------------------
 
-    def _annuler_intro(self) -> None:
-        """Coupe l'intro si elle court encore."""
+    def _retirer_tache(self, tache: asyncio.Task) -> None:
+        """Oublie une tache finie, et journalise ce qu'elle a pu avaler.
+
+        Sans ce rappel, une exception sortant d'une tache que personne
+        n'attend ne laissait qu'un « Task exception was never retrieved »
+        au fond de la console — une panne invisible dans les logs
+        applicatifs.
+        """
+        self._taches_parole.discard(tache)
+        if self._tache_intro is tache:
+            self._tache_intro = None
+        if not tache.cancelled() and tache.exception() is not None:
+            _log.error("tache de parole tombee : %r", tache.exception())
+
+    def _lancer_tour(self, ws: ServerConnection, brut: bytes) -> None:
+        """Traite un enonce en tache, pour que la reception reste libre."""
+        tache = asyncio.create_task(self._traiter_audio(ws, brut))
+        self._taches_parole.add(tache)
+        tache.add_done_callback(self._retirer_tache)
+
+    def _annuler_paroles(self) -> None:
+        """Coupe l'intro ET les tours en cours — le visiteur est parti."""
         tache = getattr(self, "_tache_intro", None)
         if tache is not None and not tache.done():
             tache.cancel()
         self._tache_intro = None
+
+        for tour in list(self._taches_parole):
+            if not tour.done():
+                tour.cancel()
 
     async def _jouer_intro(self, ws: ServerConnection) -> None:
         """Fait parler l'agent des l'arrivee du visiteur.
@@ -136,6 +180,11 @@ class Serveur:
                     else:
                         if a_parle:
                             await self._envoyer(ws, "parole.fin")
+                        elif element.texte:
+                            # Replique textuelle sans audio : la prononcer,
+                            # sinon l'agent conclut en silence.
+                            await self._dire(ws, element.texte, element.emotion)
+                            a_parle = True
                         await self._conclure(ws, element)
 
             except asyncio.CancelledError:
@@ -188,7 +237,30 @@ class Serveur:
                     else:
                         if a_parle:
                             await self._envoyer(ws, "parole.fin")
+                        elif element.texte:
+                            # Replique textuelle SANS audio — le cas
+                            # « rien compris » du STT. On la prononce :
+                            # avant, seul l'evenement emotion partait, et
+                            # l'agent demandait de repeter... en silence.
+                            await self._dire(ws, element.texte, element.emotion)
+                            a_parle = True
                         await self._conclure(ws, element)
+
+            except websockets.ConnectionClosed:
+                # Unreal est parti en plein streaming : rien a rejouer, la
+                # liberation de session est faite par le finally de
+                # _connexion. Surtout ne pas tenter un repli sur cette
+                # socket morte.
+                _log.info("connexion fermee en plein tour de parole")
+                return
+
+            except httpx.HTTPError:
+                # C'est le LLM qui ne repond pas — pas le visiteur qui
+                # articule mal. « Repetez. » l'accuserait a tort et pour
+                # rien : on annonce plutot un poste ferme.
+                _log.exception("llama.cpp injoignable pendant le tour")
+                await self._replique_de_repli(ws, "indisponible")
+                return
 
             except Exception:
                 _log.exception("echec du tour de parole")
@@ -226,7 +298,9 @@ class Serveur:
         try:
             async for message in ws:
                 if isinstance(message, bytes):
-                    await self._traiter_audio(ws, message)
+                    # En tache, jamais attendu ici : la reception doit rester
+                    # capable de lire un presence.perdue pendant le tour.
+                    self._lancer_tour(ws, message)
                     continue
 
                 try:
@@ -247,7 +321,7 @@ class Serveur:
             # etait ignoree — plus aucune session ne demarrait jusqu'au
             # redemarrage manuel du sidecar. La borne est mono-poste : une
             # connexion qui tombe emporte la session, quelle qu'elle soit.
-            self._annuler_intro()
+            self._annuler_paroles()
             self.pipeline.reinitialiser()
             if self._occupe.locked():
                 self._occupe.release()
@@ -269,11 +343,14 @@ class Serveur:
             # sidecar serait sourd au moment ou il parle : ni l'audio du
             # visiteur, ni son depart ne seraient traites.
             self._tache_intro = asyncio.create_task(self._jouer_intro(ws))
+            self._tache_intro.add_done_callback(self._retirer_tache)
 
         elif evenement in ("presence.perdue", "session.reset"):
-            # Le visiteur part : on coupe l'intro en cours plutot que de
-            # continuer a parler dans le vide.
-            self._annuler_intro()
+            # Le visiteur part : on coupe l'intro ET le tour en cours plutot
+            # que de continuer a parler dans le vide. C'est possible parce
+            # que les tours tournent en taches — la reception n'attend plus
+            # la fin d'une replique pour lire ce message.
+            self._annuler_paroles()
             self.pipeline.reinitialiser()
             if self._occupe.locked():
                 self._occupe.release()
