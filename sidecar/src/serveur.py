@@ -141,6 +141,15 @@ class Serveur:
         if audio.size == 0:
             return
 
+        # Verdict rendu : l'entretien est clos. Repondre encore ferait
+        # produire un nouveau verdict a chaque parole du visiteur, et la
+        # borne oscillerait entre Verdict et SortieZone aussi longtemps
+        # qu'il parlerait. Unreal pose deja ce garde ; on le double ici,
+        # parce qu'une borne sans surveillance ne se rattrape pas.
+        if self.pipeline.etat.terminee:
+            _log.info("parole ignoree : entretien deja clos")
+            return
+
         mesure = Mesure()
         seq = 0
         a_parle = False

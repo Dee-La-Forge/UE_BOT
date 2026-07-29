@@ -164,6 +164,18 @@ public:
 	UPROPERTY(BlueprintReadOnly, Category = "Garde Frontiere|Etat")
 	bool bIADisponible = false;
 
+	/**
+	 * Vrai tant que la parole du visiteur a un sens : accueil et
+	 * interrogatoire, jamais apres le verdict.
+	 *
+	 * C'est la frontiere qui manquait. Une fois le verdict rendu, tout enonce
+	 * encore transmis faisait produire au sidecar un nouveau verdict, qui
+	 * relancait le cycle — la borne oscillait entre Verdict et SortieZone
+	 * aussi longtemps que le visiteur parlait.
+	 */
+	UFUNCTION(BlueprintPure, Category = "Garde Frontiere|Etat")
+	bool ConversationEnCours() const;
+
 	// =====================================================================
 	// Evenements — points d'accroche de la scenographie
 	// =====================================================================

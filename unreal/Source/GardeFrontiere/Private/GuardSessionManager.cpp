@@ -188,23 +188,32 @@ void AGuardSessionManager::ChangerPhase(EGuardPhase Nouvelle)
 	// L'ecoute suit la session, pas le detail des phases : l'agent fait face
 	// au visiteur du moment ou il se presente jusqu'a ce qu'il parte. Une
 	// posture qui changerait a chaque phase donnerait un personnage agite.
+	// La POSTURE suit la session entiere : l'agent fait face au visiteur
+	// jusqu'a son depart, verdict rendu ou non.
 	const bool bEcouteVoulue = (Nouvelle != EGuardPhase::Veille);
 	if (bEcouteVoulue != bEnEcoute)
 	{
 		bEnEcoute = bEcouteVoulue;
 		AppliquerPosture();
-
-		// Le micro suit la session. La capture, elle, reste ouverte en
-		// permanence : ouvrir un peripherique audio prend des centaines de
-		// millisecondes, et les payer a l'arrivee du visiteur lui couterait
-		// ses premiers mots.
-		if (Micro)
-		{
-			bEnEcoute ? Micro->DemarrerEcoute() : Micro->ArreterEcoute();
-		}
-
 		OnEcouteChangee.Broadcast(bEnEcoute);
 	}
+
+	// Le MICRO, lui, ne suit que les phases conversationnelles. Il se ferme
+	// au verdict : l'echange est clos, et continuer d'ecouter relancait le
+	// cycle a chaque parole du visiteur.
+	//
+	// La capture materielle reste ouverte en permanence : ouvrir un
+	// peripherique audio prend des centaines de millisecondes, et les payer a
+	// l'arrivee du visiteur lui couterait ses premiers mots.
+	if (Micro)
+	{
+		ConversationEnCours() ? Micro->DemarrerEcoute() : Micro->ArreterEcoute();
+	}
+}
+
+bool AGuardSessionManager::ConversationEnCours() const
+{
+	return Phase == EGuardPhase::Accueil || Phase == EGuardPhase::Interrogatoire;
 }
 
 void AGuardSessionManager::AppliquerPosture()
@@ -267,7 +276,17 @@ void AGuardSessionManager::DemarrerSession()
 void AGuardSessionManager::TransmettreParoleVisiteur(
 	const TArray<float>& Echantillons, int32 TauxSource, int32 NbCanaux)
 {
-	if (Phase == EGuardPhase::Veille || Echantillons.Num() == 0)
+	// Seules les phases conversationnelles acceptent la parole du visiteur.
+	//
+	// Le garde ne portait que sur Veille, et le verdict rendu la borne
+	// continuait d'ecouter : chaque nouvel enonce repartait au sidecar, qui
+	// rendait un nouveau verdict, qui relancait le cycle. La phase oscillait
+	// indefiniment entre Verdict et SortieZone — onze allers-retours releves
+	// dans une seule session.
+	//
+	// Apres le verdict, l'echange est clos. Le visiteur peut parler, on
+	// n'ecoute plus.
+	if (!ConversationEnCours() || Echantillons.Num() == 0)
 	{
 		return;
 	}
