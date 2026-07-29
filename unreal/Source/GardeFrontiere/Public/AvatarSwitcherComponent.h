@@ -16,6 +16,7 @@
 #include "AvatarSwitcherComponent.generated.h"
 
 class UAnimationAsset;
+class UAnimInstance;
 class USkeletalMeshComponent;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(
@@ -57,6 +58,33 @@ public:
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Avatars")
 	bool bRetirerConvaiConversationnel = true;
+
+	// -- Audio2Face -------------------------------------------------------
+
+	/**
+	 * Prepare l'avatar pour Audio2Face : composant ACE et AnimBP facial.
+	 *
+	 * Fait au spawn plutot que dans le Blueprint de l'avatar, pour la meme
+	 * raison que le retrait des composants Convai : trois avatars a modifier
+	 * a la main, c'est trois occasions d'en oublier un.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Avatars|Audio2Face")
+	bool bPreparerAudio2Face = true;
+
+	/**
+	 * AnimBP facial recevant la pose d'Audio2Face.
+	 *
+	 * Face_AnimBP vient du projet d'exemple Kairos de NVIDIA : c'est leur
+	 * montage de reference, avec le noeud ApplyACEAnimation et la pose de
+	 * correspondance ARKit. Il remplace Convai_MetaHuman_FaceAnim, qui ne
+	 * pilotait plus rien depuis le retrait du chatbot.
+	 *
+	 * Vider ce champ laisse l'AnimBP d'origine en place.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Avatars|Audio2Face")
+	TSoftClassPtr<UAnimInstance> AnimBPFacial =
+		TSoftClassPtr<UAnimInstance>(FSoftObjectPath(
+			TEXT("/Game/MetaHumans/Common/Face/Face_AnimBP.Face_AnimBP_C")));
 
 	UPROPERTY(BlueprintReadOnly, Category = "Avatars")
 	TObjectPtr<AActor> AvatarCourant;
@@ -101,6 +129,9 @@ private:
 
 	/** Detruit les composants Convai conversationnels ; rend le nombre retire. */
 	int32 RetirerConvaiConversationnel(AActor* Avatar) const;
+
+	/** Pose le composant ACE et l'AnimBP facial sur l'avatar. */
+	void PreparerAudio2Face(AActor* Avatar) const;
 
 	mutable int32 IndexPrecedent = -1;
 };

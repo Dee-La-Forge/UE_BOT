@@ -158,6 +158,11 @@ AActor* UAvatarSwitcherComponent::Spawner(int32 Index)
 		RetirerConvaiConversationnel(Nouveau);
 	}
 
+	if (bPreparerAudio2Face)
+	{
+		PreparerAudio2Face(Nouveau);
+	}
+
 	AvatarCourant = Nouveau;
 
 	IndexCourant = Index;
@@ -251,6 +256,99 @@ int32 UAvatarSwitcherComponent::RetirerConvaiConversationnel(AActor* Avatar) con
 	}
 
 	return NbRetires;
+}
+
+void UAvatarSwitcherComponent::PreparerAudio2Face(AActor* Avatar) const
+{
+	if (!Avatar)
+	{
+		return;
+	}
+
+	// -- Le composant ACE ------------------------------------------------
+	//
+	// Instancie par nom de classe, comme le retrait Convai : le module
+	// GardeFrontiere reste compilable sans les 4 Go du plugin NVIDIA, qui ne
+	// sont pas versionnes. Une borne sans Audio2Face parle et entend encore ;
+	// seule la bouche reste immobile.
+	UClass* ClasseACE = FindObject<UClass>(
+		nullptr, TEXT("/Script/ACERuntime.ACEAudioCurveSourceComponent"));
+
+	if (!ClasseACE)
+	{
+		UE_LOG(LogGardeFrontiere, Warning,
+			TEXT("Avatars : ACEAudioCurveSourceComponent introuvable — le plugin ")
+			TEXT("NV_ACE_Reference est-il installe ? La bouche restera immobile."));
+		return;
+	}
+
+	// Un avatar peut deja le porter si son Blueprint a ete edite a la main.
+	if (Avatar->GetComponentByClass(ClasseACE) == nullptr)
+	{
+		UActorComponent* Ace = NewObject<UActorComponent>(Avatar, ClasseACE, TEXT("ACEAudioCurveSource"));
+		if (Ace)
+		{
+			// Attacher AVANT d'enregistrer : un USceneComponent non attache
+			// se retrouve a l'origine du monde, et le son de l'agent sortirait
+			// d'ailleurs que de sa bouche.
+			if (USceneComponent* Scene = Cast<USceneComponent>(Ace))
+			{
+				Scene->SetupAttachment(Avatar->GetRootComponent());
+			}
+			Ace->RegisterComponent();
+
+			UE_LOG(LogGardeFrontiere, Log,
+				TEXT("Avatars : ACEAudioCurveSource pose sur %s"), *Avatar->GetName());
+		}
+	}
+
+	// -- L'AnimBP facial -------------------------------------------------
+	//
+	// Face_AnimBP porte le noeud ApplyACEAnimation et la correspondance
+	// ARKit. Il remplace Convai_MetaHuman_FaceAnim, qui ne pilotait plus rien
+	// depuis le retrait du chatbot — et dont les courbes d'emotion
+	// n'existaient de toute facon pas sous les noms attendus.
+	if (AnimBPFacial.IsNull())
+	{
+		return;
+	}
+
+	USkeletalMeshComponent* Visage = nullptr;
+	{
+		TArray<USkeletalMeshComponent*> Maillages;
+		Avatar->GetComponents<USkeletalMeshComponent>(Maillages);
+		for (USkeletalMeshComponent* M : Maillages)
+		{
+			if (M && M->GetName().Contains(TEXT("Face")))
+			{
+				Visage = M;
+				break;
+			}
+		}
+	}
+
+	if (!Visage)
+	{
+		UE_LOG(LogGardeFrontiere, Warning,
+			TEXT("Avatars : aucun maillage 'Face' sur %s — AnimBP facial non pose"),
+			*Avatar->GetName());
+		return;
+	}
+
+	// Chargement synchrone assume : on est au spawn, l'avatar doit etre
+	// complet avant que le visiteur ne le voie.
+	if (UClass* ClasseAnim = AnimBPFacial.LoadSynchronous())
+	{
+		Visage->SetAnimInstanceClass(ClasseAnim);
+		UE_LOG(LogGardeFrontiere, Log,
+			TEXT("Avatars : AnimBP facial = %s"), *ClasseAnim->GetName());
+	}
+	else
+	{
+		UE_LOG(LogGardeFrontiere, Error,
+			TEXT("Avatars : AnimBP facial introuvable (%s)"),
+			*AnimBPFacial.ToString());
+	}
 }
 
 USkeletalMeshComponent* UAvatarSwitcherComponent::TrouverMaillageCorps() const
