@@ -25,6 +25,7 @@ class UAgentFaceComponent;
 class UGlitchComponent;
 class UAvatarSwitcherComponent;
 class UStampComponent;
+class UVisitorMicComponent;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(
 	FOnPhaseChangee, EGuardPhase, NouvellePhase);
@@ -247,6 +248,10 @@ public:
 	/** Tampons accepte/refuse et panneau de sortie. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Garde Frontiere")
 	TObjectPtr<UStampComponent> Tampons;
+
+	/** Capte la parole du visiteur et la borne — le pendant de Voix. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Garde Frontiere")
+	TObjectPtr<UVisitorMicComponent> Micro;
 
 	UPROPERTY(BlueprintReadOnly, Category = "Garde Frontiere")
 	TObjectPtr<USidecarClient> Sidecar;

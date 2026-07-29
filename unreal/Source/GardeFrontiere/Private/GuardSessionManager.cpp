@@ -8,6 +8,7 @@
 #include "GlitchComponent.h"
 #include "AvatarSwitcherComponent.h"
 #include "StampComponent.h"
+#include "VisitorMicComponent.h"
 #include "AudioBridge.h"
 #include "TimerManager.h"
 #include "Engine/Engine.h"
@@ -26,6 +27,7 @@ AGuardSessionManager::AGuardSessionManager()
 	Glitch  = CreateDefaultSubobject<UGlitchComponent>(TEXT("Glitch"));
 	Avatars = CreateDefaultSubobject<UAvatarSwitcherComponent>(TEXT("Avatars"));
 	Tampons = CreateDefaultSubobject<UStampComponent>(TEXT("Tampons"));
+	Micro   = CreateDefaultSubobject<UVisitorMicComponent>(TEXT("Micro"));
 }
 
 void AGuardSessionManager::BeginPlay()
@@ -78,6 +80,19 @@ void AGuardSessionManager::BeginPlay()
 	if (Glitch)
 	{
 		Glitch->OnGlitchTermine.AddDynamic(this, &AGuardSessionManager::SurGlitchTermine);
+	}
+
+	// La parole du visiteur, une fois bornee par le VAD, part au sidecar par
+	// le meme chemin que si un Blueprint l'avait transmise — c'est
+	// TransmettreParoleVisiteur qui reste le point d'entree unique, avec son
+	// controle de niveau et sa conversion.
+	if (Micro)
+	{
+		Micro->OnSegmentVisiteur.AddLambda(
+			[this](const TArray<float>& Echantillons, int32 Taux, int32 NbCanaux)
+			{
+				TransmettreParoleVisiteur(Echantillons, Taux, NbCanaux);
+			});
 	}
 
 	// A chaque nouvel avatar, le composant d'expression doit recibler le
@@ -178,6 +193,16 @@ void AGuardSessionManager::ChangerPhase(EGuardPhase Nouvelle)
 	{
 		bEnEcoute = bEcouteVoulue;
 		AppliquerPosture();
+
+		// Le micro suit la session. La capture, elle, reste ouverte en
+		// permanence : ouvrir un peripherique audio prend des centaines de
+		// millisecondes, et les payer a l'arrivee du visiteur lui couterait
+		// ses premiers mots.
+		if (Micro)
+		{
+			bEnEcoute ? Micro->DemarrerEcoute() : Micro->ArreterEcoute();
+		}
+
 		OnEcouteChangee.Broadcast(bEnEcoute);
 	}
 }

@@ -34,6 +34,12 @@ public class GardeFrontiere : ModuleRules
 			// Lecture audio de la parole de l'agent
 			"AudioMixer",
 
+			// Capture du micro du visiteur et detection d'activite vocale.
+			// Le module Silero n'est PAS declare : son fournisseur est
+			// instancie par nom de classe, pour que le projet compile meme
+			// si le plugin est retire.
+			"RuntimeAudioImporter",
+
 			// Convai n'est conserve que pour ses animations MetaHuman :
 			// les AnimBP de corps et de visage, et les poses d'emotion.
 			// Ni visemes ni suivi du regard — le lipsync viendra
