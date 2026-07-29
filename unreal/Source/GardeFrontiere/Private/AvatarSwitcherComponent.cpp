@@ -15,29 +15,55 @@ UAvatarSwitcherComponent::UAvatarSwitcherComponent()
 {
 	PrimaryComponentTick.bCanEverTick = false;
 
-	// Les trois agents, cables par defaut.
+	// Les trois agents, en references DIFFEREES.
 	//
-	// Une reference en dur du C++ vers du contenu se justifie ici : sans les
-	// trois, toute la mecanique tourne a vide — le glitch masque une
-	// substitution qui remplace Germain par Germain, et le visiteur revoit le
-	// meme visage. C'est arrive pendant des jours, faute d'un tableau rempli.
+	// Surtout pas ConstructorHelpers::FClassFinder ici. Il charge de facon
+	// synchrone, dans le constructeur, donc a la creation du CDO — pendant
+	// l'initialisation du module, avant que tous les plugins soient debout.
+	// Charger BP_AgentGermain tire alors toutes ses dependances, dont
+	// ABP_MH_LiveLink, dont les imports reclament /Script/LiveLink :
 	//
-	// Une entree introuvable est simplement ignoree : le projet doit compiler
-	// et demarrer meme si un avatar n'a pas ete importe.
-	static const TCHAR* Chemins[] = {
-		TEXT("/Game/MetaHumans/AgentGermain/BP_AgentGermain.BP_AgentGermain_C"),
-		TEXT("/Game/MetaHumans/AgentLouise/BP_AgentLouise.BP_AgentLouise_C"),
-		TEXT("/Game/MetaHumans/AgentTrinity/BP_AgentTrinity.BP_AgentTrinity_C"),
+	//   VerifyImport: Failed to find script package for import object
+	//   'Package /Script/LiveLink'
+	//
+	// L'AnimBP perdait ses broches et echouait a compiler, seize erreurs a
+	// chaque demarrage de l'editeur. ConstructorHelpers convient a un asset
+	// simple, pas a un MetaHuman qui traine des centaines de dependances.
+	//
+	// Les chemins sont donc resolus dans BeginPlay, quand tout est charge.
+	AvatarsParDefaut = {
+		FSoftClassPath(TEXT("/Game/MetaHumans/AgentGermain/BP_AgentGermain.BP_AgentGermain_C")),
+		FSoftClassPath(TEXT("/Game/MetaHumans/AgentLouise/BP_AgentLouise.BP_AgentLouise_C")),
+		FSoftClassPath(TEXT("/Game/MetaHumans/AgentTrinity/BP_AgentTrinity.BP_AgentTrinity_C")),
 	};
+}
 
-	for (const TCHAR* Chemin : Chemins)
+void UAvatarSwitcherComponent::BeginPlay()
+{
+	Super::BeginPlay();
+
+	// Le tableau renseigne dans le niveau prime toujours : ces chemins ne
+	// sont qu'un filet pour un GuardSessionManager pose sans reglage.
+	if (ClassesAvatars.Num() > 0)
 	{
-		ConstructorHelpers::FClassFinder<AActor> Trouve(Chemin);
-		if (Trouve.Succeeded())
+		return;
+	}
+
+	for (const FSoftClassPath& Chemin : AvatarsParDefaut)
+	{
+		if (UClass* Classe = Chemin.TryLoadClass<AActor>())
 		{
-			ClassesAvatars.Add(Trouve.Class);
+			ClassesAvatars.Add(Classe);
+		}
+		else if (!Chemin.IsNull())
+		{
+			UE_LOG(LogGardeFrontiere, Warning,
+				TEXT("Avatars : %s introuvable — avatar ignore"), *Chemin.ToString());
 		}
 	}
+
+	UE_LOG(LogGardeFrontiere, Log,
+		TEXT("Avatars : %d classe(s) chargee(s) par defaut"), ClassesAvatars.Num());
 }
 
 void UAvatarSwitcherComponent::EndPlay(const EEndPlayReason::Type Raison)

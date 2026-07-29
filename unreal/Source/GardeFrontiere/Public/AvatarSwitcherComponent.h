@@ -34,6 +34,19 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Avatars")
 	TArray<TSubclassOf<AActor>> ClassesAvatars;
 
+	/**
+	 * Filet si ClassesAvatars est vide — resolu dans BeginPlay.
+	 *
+	 * DIFFERE, et ce n'est pas un detail de style. Charger ces classes dans
+	 * le constructeur, via ConstructorHelpers, les chargeait a la creation du
+	 * CDO : avant que tous les plugins soient debout. Les MetaHumans tiraient
+	 * alors ABP_MH_LiveLink, dont les imports reclament /Script/LiveLink, pas
+	 * encore en memoire — seize erreurs de compilation a chaque demarrage de
+	 * l'editeur, pour un asset que le projet n'utilise meme pas.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Avatars")
+	TArray<FSoftClassPath> AvatarsParDefaut;
+
 	/** Transform de spawn — 0,0,0 / 0,0,90 / 1,1,1 dans l'original. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Avatars")
 	FTransform TransformSpawn = FTransform(FRotator(0.f, 90.f, 0.f), FVector::ZeroVector);
@@ -121,6 +134,7 @@ public:
 	void JouerAnimationCorps(UAnimationAsset* Animation, bool bBoucler = true);
 
 protected:
+	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type Raison) override;
 
 private:

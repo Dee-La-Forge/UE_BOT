@@ -253,3 +253,33 @@ sert plus qu'a faire charger un asset casse au demarrage de l'editeur.
 
 Remplacer `ABP_MH_LiveLink` par `Face_AnimBP` dans les trois Blueprints
 d'avatar, et plus rien ne le chargera.
+
+### RESOLU — et ACE n'y etait pour rien
+
+La cause etait dans le projet, pas dans le plugin.
+
+`UAvatarSwitcherComponent`, dans son CONSTRUCTEUR :
+
+```cpp
+ConstructorHelpers::FClassFinder<AActor> Trouve(".../BP_AgentGermain_C");
+```
+
+`FClassFinder` charge de facon synchrone. Dans un constructeur, cela se
+produit a la creation du CDO — pendant l'initialisation du module, avant que
+tous les plugins soient debout. Charger un MetaHuman tire toutes ses
+dependances, dont `ABP_MH_LiveLink`, dont les imports reclament
+`/Script/LiveLink`, pas encore en memoire.
+
+**ACE a revele le defaut, il ne l'a pas cree.** Ses quatre modules en
+`PreDefault` et `PreLoadingScreen` ont deplace l'ordre d'initialisation ;
+avant, il tombait juste par chance. C'est pourquoi les deux tentatives sur
+ses phases de chargement etaient vouees a l'echec : elles repondaient a la
+mauvaise question.
+
+**La bonne question n'etait pas « pourquoi LiveLink est-il en retard »
+mais « pourquoi cet asset est-il charge si tot ».**
+
+Correction : `TArray<FSoftClassPath>` resolu dans `BeginPlay`. Resultat
+mesure — 20 occurrences avant, **0 apres**, ACE inchange.
+
+`ConstructorHelpers` convient a un asset simple. Pas a un MetaHuman.
