@@ -132,6 +132,11 @@ void AGuardSessionManager::BeginPlay()
 		Avatars->OnAvatarChange.AddDynamic(this, &AGuardSessionManager::SurAvatarChange);
 	}
 
+	// Mode d'inference d'Audio2Face, avant toute session.
+	UACEBlueprintLibrary::OverrideA2F3DInferenceMode(bInferenceEnRafale);
+	UE_LOG(LogGardeFrontiere, Log, TEXT("Audio2Face : inference %s"),
+		bInferenceEnRafale ? TEXT("en rafale") : TEXT("bridee au temps reel"));
+
 	ChangerPhase(EGuardPhase::Veille);
 
 	// Un garde tient le poste avant meme le premier visiteur. Le spawn passe

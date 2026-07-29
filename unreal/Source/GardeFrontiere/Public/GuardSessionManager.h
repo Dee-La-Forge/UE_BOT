@@ -117,6 +117,30 @@ public:
 	FName FournisseurA2F;
 
 	/**
+	 * Inference en rafale plutot qu'en temps reel.
+	 *
+	 * Le mode par defaut d'ACE BRIDE l'inference a la vitesse de lecture :
+	 * il ne va jamais plus vite que l'audio ne dure. Mesure a l'appui, une
+	 * replique de 3,8 s mettait 3,47 s a etre animee AVANT de commencer a
+	 * s'entendre — et la latence suivait la longueur de la replique, d'ou
+	 * l'irregularite ressentie.
+	 *
+	 *    32 trames ->   686 ms
+	 *   104 trames ->  1403 ms
+	 *   228 trames ->  3468 ms
+	 *
+	 * NVIDIA deconseille la rafale quand le rendu tourne sur la meme
+	 * machine, pour ne pas affamer le GPU. L'avertissement est prudent et
+	 * general ; il ne s'applique pas ici : la 3090 Ti mesure 46 % d'usage
+	 * moyen en session, avec 11,6 Go de VRAM libres.
+	 *
+	 * A rebasculer si l'image saccade pendant que l'agent parle — ce serait
+	 * le signe que l'avertissement nous rattrape.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Garde Frontiere|Audio2Face")
+	bool bInferenceEnRafale = true;
+
+	/**
 	 * Joue aussi la voix par AgentVoiceComponent, en plus d'Audio2Face.
 	 *
 	 * DESACTIVE. Le composant ACE joue lui-meme ce qu'il renvoie : doubler
