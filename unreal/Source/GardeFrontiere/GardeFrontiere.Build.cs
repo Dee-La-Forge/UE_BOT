@@ -40,6 +40,13 @@ public class GardeFrontiere : ModuleRules
 			// si le plugin est retire.
 			"RuntimeAudioImporter",
 
+			// Audio2Face-3D. On passe par FAudio2XSession, qui prend des
+			// trames int16 au fil de l'eau — l'API publique, elle, veut un
+			// USoundWave cuit, ce qui suppose d'enregistrer un clip avant de
+			// l'animer. Voir patches/NV_ACE_Reference-UE5.7.md.
+			"ACERuntime",
+			"ACECore",
+
 			// Convai n'est conserve que pour ses animations MetaHuman :
 			// les AnimBP de corps et de visage, et les poses d'emotion.
 			// Ni visemes ni suivi du regard — le lipsync viendra

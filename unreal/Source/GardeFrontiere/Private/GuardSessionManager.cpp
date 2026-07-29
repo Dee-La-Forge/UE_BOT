@@ -9,6 +9,10 @@
 #include "AvatarSwitcherComponent.h"
 #include "StampComponent.h"
 #include "VisitorMicComponent.h"
+
+#include "A2XSession.h"
+#include "A2FProvider.h"
+#include "ACERuntimeModule.h"
 #include "AudioBridge.h"
 #include "TimerManager.h"
 #include "Engine/Engine.h"
@@ -47,6 +51,21 @@ void AGuardSessionManager::BeginPlay()
 	Sidecar->OnAudioRecu.AddLambda(
 		[this](const TArray<uint8>& PCM16, int32 Taux)
 		{
+			// Audio2Face d'abord : son composant JOUE le son en plus d'animer
+			// le visage. Empiler la meme trame dans Voix ferait parler l'agent
+			// deux fois, avec un decalage.
+			if (OuvrirSessionA2F(Taux))
+			{
+				const TArrayView<const int16> Echantillons(
+					reinterpret_cast<const int16*>(PCM16.GetData()), PCM16.Num() / 2);
+
+				SessionA2F->SendAudioSamples(Echantillons, false, NullOpt, nullptr);
+				return;
+			}
+
+			// Repli : sans Audio2Face, la borne parle quand meme, bouche
+			// fermee. Une borne muette serait un echec ; une borne qui parle
+			// sans articuler reste utilisable.
 			if (Voix)
 			{
 				Voix->EmpilerTrame(PCM16, Taux);
@@ -134,6 +153,11 @@ void AGuardSessionManager::EndPlay(const EEndPlayReason::Type Raison)
 		Monde->GetTimerManager().ClearAllTimersForObject(this);
 	}
 	UE_LOG(LogGardeFrontiere, Warning, TEXT("ARRET 2/6 : minuteries annulees"));
+
+	// Avant tout le reste : la session Audio2Face tient un pointeur sur le
+	// composant de l'avatar, et l'avatar est detruit plus loin dans cette
+	// meme sequence d'arret.
+	FermerSessionA2F();
 
 	if (Sidecar)
 	{
@@ -417,6 +441,59 @@ void AGuardSessionManager::SurGlitchTermine()
 	}
 }
 
+bool AGuardSessionManager::OuvrirSessionA2F(int32 Taux)
+{
+	// Une session par replique, rouverte si le taux change — ce qui
+	// n'arriverait qu'en changeant de voix TTS.
+	if (SessionA2F.IsValid() && TauxSessionA2F == Taux)
+	{
+		return true;
+	}
+
+	IACEAnimDataConsumer* Consommateur = Avatars ? Avatars->TrouverConsommateurACE() : nullptr;
+	if (!Consommateur)
+	{
+		return false;   // pas d'avatar, ou plugin absent : repli sur Voix
+	}
+
+	IA2FProvider* Fournisseur = GetProviderFromName(GetDefaultProviderName());
+	if (!Fournisseur)
+	{
+		UE_LOG(LogGardeFrontiere, Warning,
+			TEXT("Audio2Face : aucun fournisseur — le modele est-il installe ?"));
+		return false;
+	}
+
+	// Mono, PCM16 : ce que le sidecar envoie. La session reechantillonne
+	// elle-meme vers les 16 kHz qu'attend le reseau.
+	SessionA2F = MakePimpl<FAudio2XSession>(Fournisseur, 1, static_cast<uint32>(Taux), 2);
+
+	if (!SessionA2F->StartSession(Consommateur))
+	{
+		UE_LOG(LogGardeFrontiere, Warning, TEXT("Audio2Face : ouverture de session refusee"));
+		SessionA2F.Reset();
+		return false;
+	}
+
+	TauxSessionA2F = Taux;
+	UE_LOG(LogGardeFrontiere, Log, TEXT("Audio2Face : session ouverte a %d Hz"), Taux);
+	return true;
+}
+
+void AGuardSessionManager::FermerSessionA2F()
+{
+	if (!SessionA2F.IsValid())
+	{
+		return;
+	}
+
+	// EndAudioSamples signale la fin du flux sans couper la lecture : le
+	// composant ACE finit de jouer et d'animer ce qu'il a deja recu.
+	SessionA2F->EndAudioSamples();
+	SessionA2F.Reset();
+	TauxSessionA2F = 0;
+}
+
 void AGuardSessionManager::OuvrirLaScene()
 {
 	// L'index n'est fiable qu'ICI. Diffuse au demarrage de la session, il
@@ -479,6 +556,9 @@ void AGuardSessionManager::SurParoleDebut(const FString& Texte, EGuardEmotion Em
 
 void AGuardSessionManager::SurParoleFin()
 {
+	// Le sidecar a fini d'envoyer : on ferme le flux. Audio2Face joue et
+	// anime ce qu'il a deja recu, la bouche ne se coupe pas net.
+	FermerSessionA2F();
 	ArmerAbandon();
 }
 

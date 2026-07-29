@@ -9,6 +9,8 @@
 #include "GameFramework/Actor.h"
 #include "UObject/UnrealType.h"
 
+#include "ACEAudioCurveSourceComponent.h"
+
 UAvatarSwitcherComponent::UAvatarSwitcherComponent()
 {
 	PrimaryComponentTick.bCanEverTick = false;
@@ -256,6 +258,19 @@ int32 UAvatarSwitcherComponent::RetirerConvaiConversationnel(AActor* Avatar) con
 	}
 
 	return NbRetires;
+}
+
+IACEAnimDataConsumer* UAvatarSwitcherComponent::TrouverConsommateurACE() const
+{
+	if (!AvatarCourant)
+	{
+		return nullptr;
+	}
+
+	UACEAudioCurveSourceComponent* Source =
+		AvatarCourant->FindComponentByClass<UACEAudioCurveSourceComponent>();
+
+	return Source;
 }
 
 void UAvatarSwitcherComponent::PreparerAudio2Face(AActor* Avatar) const

@@ -15,6 +15,7 @@
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
 #include "GuardSessionTypes.h"
+#include "Templates/PimplPtr.h"
 #include "GuardSessionManager.generated.h"
 
 class UAnimationAsset;
@@ -64,6 +65,7 @@ class GARDEFRONTIERE_API AGuardSessionManager : public AActor
 
 public:
 	AGuardSessionManager();
+
 
 	// =====================================================================
 	// Configuration — tout ce qui etait code en dur dans l'ancien projet
@@ -296,6 +298,32 @@ private:
 	 * celui de l'avatar reellement present, et l'agent qui parle doit exister.
 	 */
 	void OuvrirLaScene();
+
+	// -- Audio2Face -------------------------------------------------------
+
+	/** Ouvre une session A2F sur l'avatar courant. Rend vrai si elle est prete. */
+	bool OuvrirSessionA2F(int32 Taux);
+
+	/** Clot le flux : Audio2Face finit de jouer ce qu'il a deja recu. */
+	void FermerSessionA2F();
+
+	/**
+	 * Session Audio2Face de la replique en cours.
+	 *
+	 * Une par replique. La session porte le taux d'echantillonnage et l'etat
+	 * du flux, et se termine sur bEndOfSamples — apres quoi elle n'accepte
+	 * plus rien. En rouvrir une a chaque replique coute moins cher que de
+	 * maintenir un flux perpetuel qui devrait distinguer les silences entre
+	 * deux phrases des fins de replique.
+	 *
+	 * TPimplPtr et non TUniquePtr : FAudio2XSession n'est ici que declare en
+	 * avant, et le code genere par UHT detruirait un type incomplet. TPimplPtr
+	 * capture le destructeur a la construction, la ou le type est complet.
+	 */
+	TPimplPtr<class FAudio2XSession> SessionA2F;
+
+	/** Taux de la session ouverte, pour la rouvrir si le sidecar en changeait. */
+	int32 TauxSessionA2F = 0;
 
 	// Reactions au capteur de presence
 	UFUNCTION() void SurPresenceDetectee();

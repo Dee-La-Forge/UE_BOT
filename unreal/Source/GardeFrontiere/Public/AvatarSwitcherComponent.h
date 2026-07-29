@@ -133,5 +133,15 @@ private:
 	/** Pose le composant ACE et l'AnimBP facial sur l'avatar. */
 	void PreparerAudio2Face(AActor* Avatar) const;
 
+public:
+	/**
+	 * Le consommateur d'animation ACE de l'avatar courant, s'il en a un.
+	 *
+	 * C'est lui qui joue la voix et applique les courbes faciales. Rendu en
+	 * IACEAnimDataConsumer plutot qu'en composant : c'est l'interface qu'attend
+	 * la session Audio2Face, et le reste ne nous concerne pas.
+	 */
+	class IACEAnimDataConsumer* TrouverConsommateurACE() const;
+
 	mutable int32 IndexPrecedent = -1;
 };

@@ -185,3 +185,44 @@ impose `Face_AnimBP` au maillage facial **au spawn**. Le role de
 Ce qui reste est du bruit au demarrage de l'editeur, sur un asset dont la
 fonction est superseded. A reprendre si un defaut visuel apparaissait sur
 un avatar — ce serait alors le premier endroit ou regarder.
+
+## Second correctif : exposer la session de flux
+
+L'API publique n'accepte qu'un `USoundWave` **cuit**. `SoundWaveConversion.cpp`
+appelle `InitAudioResource` puis `ReadCompressedInfo` sur les donnees
+compressees de l'asset. Il existe un chemin de secours lisant `RawPCMData`,
+desactive par defaut, que NVIDIA commente ainsi :
+
+> *This might work. Really we're just hoping to get lucky and find something
+> useful in your USoundWave's RawPCMData* — *there's a race condition here*
+
+Ce chemin convient a Kairos, qui enregistre un clip au micro puis l'anime.
+Il ne convient pas a une borne qui synthetise sa voix en continu.
+
+`FAudio2XSession` est l'interface juste :
+
+```cpp
+StartSession(IACEAnimDataConsumer*)
+SendAudioSamples(TArrayView<const int16>, bEndOfSamples, emotion, params)
+EndAudioSamples()
+```
+
+Elle prend des trames int16 au fil de l'eau — ce que le sidecar produit — et
+reechantillonne elle-meme vers les 16 kHz du reseau.
+
+**Le correctif tient en deux gestes**, tout le reste etant deja public
+(`GetProviderFromName` et `GetDefaultProviderName` sont exportes dans
+`Public/ACERuntimeModule.h`, `A2FProvider.h` et `ACETypes.h` sont dans
+`ACECore/Public/`) :
+
+1. Deplacer `ACERuntime/Private/A2XSession.h` vers `ACERuntime/Public/`
+2. Exporter la classe : `class ACERUNTIME_API FAudio2XSession`
+
+### Piege cote projet
+
+`TUniquePtr<FAudio2XSession>` sur une declaration en avant ne compile pas :
+le code genere par UHT detruirait un type incomplet, et un destructeur
+declare a la main entre en collision avec celui que genere UHT.
+
+Utiliser **`TPimplPtr`**, fait pour ce cas : il capture le destructeur a la
+construction, la ou le type est complet. Aucun destructeur a declarer.
