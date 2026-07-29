@@ -119,17 +119,16 @@ public:
 	/**
 	 * Joue aussi la voix par AgentVoiceComponent, en plus d'Audio2Face.
 	 *
-	 * Diagnostic : le composant ACE est cense jouer lui-meme le son qu'il
-	 * renvoie. S'il reste muet alors qu'Audio2Face produit bien ses trames,
-	 * ceci permet d'entendre la replique et de voir si le visage s'anime —
-	 * donc de savoir si le defaut porte sur la lecture seule ou sur toute la
-	 * chaine.
+	 * DESACTIVE. Le composant ACE joue lui-meme ce qu'il renvoie : doubler
+	 * faisait parler l'agent deux fois. Ce drapeau n'a servi qu'a etablir que
+	 * l'animation faciale fonctionnait pendant que la lecture d'ACE paraissait
+	 * muette — elle ne l'etait pas, elle etait couverte.
 	 *
-	 * A decocher une fois la lecture d'ACE reparee : les deux ensemble
-	 * feraient parler l'agent deux fois.
+	 * Conserve comme repli de mise au point, si la lecture d'ACE venait a
+	 * defaillir sur une autre machine.
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Garde Frontiere|Audio2Face")
-	bool bDoublerVoixPourDiagnostic = true;
+	bool bDoublerVoixPourDiagnostic = false;
 
 	// La rotation d'avatars appartient a UAvatarSwitcherComponent :
 	// selectionne le composant "Avatars" pour regler ClassesAvatars,

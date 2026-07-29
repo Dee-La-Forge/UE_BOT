@@ -369,6 +369,8 @@ void AGuardSessionManager::TerminerSession(EGuardFinDeSession Raison)
 
 	// On ne laisse ni l'agent parler dans le vide, ni un tampon ou un
 	// effet rester affiche apres le depart du visiteur.
+	FermerSessionA2F();
+
 	if (Voix)    { Voix->Interrompre(); }
 	if (Tampons) { Tampons->Masquer(); }
 	if (Glitch)  { Glitch->Arreter(); }
@@ -574,6 +576,12 @@ void AGuardSessionManager::SurParoleDebut(const FString& Texte, EGuardEmotion Em
 {
 	bIADisponible = true;
 
+	// Nouvelle replique : on clot le flux precedent avant d'en ouvrir un
+	// autre. EndAudioSamples ne coupe pas la lecture — la queue de la phrase
+	// precedente finit de s'entendre — mais il garantit qu'une seule session
+	// recoit des trames a la fois.
+	FermerSessionA2F();
+
 	// La phase ne bascule PLUS ici. La premiere replique de l'agent est son
 	// accueil : cote sidecar c'est la phase INTRO, qui ne compte pas comme
 	// une question. Basculer des qu'il ouvre la bouche faisait diverger les
@@ -596,9 +604,16 @@ void AGuardSessionManager::SurParoleDebut(const FString& Texte, EGuardEmotion Em
 
 void AGuardSessionManager::SurParoleFin()
 {
-	// Le sidecar a fini d'envoyer : on ferme le flux. Audio2Face joue et
-	// anime ce qu'il a deja recu, la bouche ne se coupe pas net.
-	FermerSessionA2F();
+	// La session A2F n'est PAS fermee ici. Elle l'etait, et une trame arrivant
+	// juste apres ouvrait une seconde session pendant que la premiere jouait
+	// encore — deux voix superposees :
+	//
+	//   [ACE SID 1] End of samples
+	//   [ACE SID 2] Started session          <- meme milliseconde
+	//
+	// Elle se ferme desormais au debut de la replique SUIVANTE, et a la fin
+	// de la session. Une trame en retard rejoint ainsi le flux auquel elle
+	// appartient, au lieu d'en ouvrir un concurrent.
 	ArmerAbandon();
 }
 
