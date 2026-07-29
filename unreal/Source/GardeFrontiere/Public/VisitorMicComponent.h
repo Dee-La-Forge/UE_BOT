@@ -78,6 +78,23 @@ public:
 	float DureeMinSegment = 0.35f;
 
 	/**
+	 * Silence conserve en queue d'enonce avant transmission.
+	 *
+	 * A distinguer de SilenceFinSegment, avec lequel je les avais confondus.
+	 * Celui-la decide QUAND l'enonce est fini — il doit rester genereux, sinon
+	 * on coupe le visiteur au milieu d'une respiration. Celui-ci decide
+	 * COMBIEN de ce silence on transmet, et il doit rester court.
+	 *
+	 * Les envoyer confondus faisait porter a chaque enonce 600 ms de vide :
+	 * sur un enonce de 930 ms, deux tiers de silence, que Whisper transcrivait
+	 * consciencieusement. Le temps de transcription variait de 192 a 672 ms
+	 * selon la longueur — toute l'instabilite de la latence venait de la.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Micro|Segmentation",
+		meta = (ClampMin = "0.0", ClampMax = "1.0", Units = "s"))
+	float MargeSilenceTransmise = 0.15f;
+
+	/**
 	 * Au-dela, on coupe et on transmet.
 	 *
 	 * Un visiteur intarissable — ou un micro qui capte une conversation de

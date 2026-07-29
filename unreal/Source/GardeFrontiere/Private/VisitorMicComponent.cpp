@@ -184,11 +184,32 @@ void UVisitorMicComponent::ArreterEcoute()
 
 void UVisitorMicComponent::FermerSegment()
 {
+	const float DureeBrute = Segment.Num() / static_cast<float>(TauxCible);
+
+	// Elaguer le silence de queue AVANT de transmettre.
+	//
+	// SilenceEcoule est exactement ce qu'on a accumule depuis la derniere
+	// trame de parole : on en garde une marge courte, on jette le reste. La
+	// decision de fin d'enonce reste prise sur SilenceFinSegment, genereux ;
+	// seule la quantite transmise change.
+	//
+	// Sans cela, chaque enonce portait 600 ms de vide que Whisper transcrivait
+	// — deux tiers du signal sur les repliques courtes.
+	const float ASupprimer = SilenceEcoule - MargeSilenceTransmise;
+	if (ASupprimer > 0.f)
+	{
+		const int32 Echantillons = FMath::Min(
+			static_cast<int32>(ASupprimer * TauxCible), Segment.Num());
+		Segment.SetNum(Segment.Num() - Echantillons, EAllowShrinking::No);
+	}
+
 	const float Duree = Segment.Num() / static_cast<float>(TauxCible);
 
 	if (Duree >= DureeMinSegment)
 	{
-		UE_LOG(LogGardeFrontiere, Log, TEXT("Micro : enonce de %.2f s transmis"), Duree);
+		UE_LOG(LogGardeFrontiere, Log,
+			TEXT("Micro : enonce de %.2f s transmis (%.2f s avant elagage)"),
+			Duree, DureeBrute);
 		OnSegmentVisiteur.Broadcast(Segment, TauxCible, 1);
 	}
 	else if (Segment.Num() > 0)

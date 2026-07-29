@@ -21,8 +21,12 @@ stt:
   peripherique: "cuda"
   type_calcul: "float16"
   langue: "fr"
-  # Le VAD amont (SileroVAD cote Unreal) fournit deja des segments propres.
-  vad_filtre: true
+  # Le VAD amont (SileroVAD cote Unreal) fournit deja des segments propres,
+  # et la mesure le confirme : sur chaque tour, le journal de faster-whisper
+  # affiche « VAD filter removed 00:00.000 of audio ». Il n'a jamais rien
+  # trouve a retirer. C'etait donc une passe de detection payee pour rien,
+  # sur un signal deja borne par Silero puis elague cote Unreal.
+  vad_filtre: false
 
 llm:
   # llama.cpp server, lance separement — voir scripts/setup.ps1
