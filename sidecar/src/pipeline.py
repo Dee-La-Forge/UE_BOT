@@ -105,22 +105,40 @@ class Pipeline:
 
         if e.phase is Phase.INTRO:
             return "[Debut du controle. Interpelle le visiteur.]"
-        if e.nb_questions < e.questions_min:
-            manquantes = e.questions_min - e.nb_questions
-            return (
-                f"[{e.nb_questions} question(s) posee(s). "
-                f"Encore {manquantes} au minimum avant tout verdict.]"
-            )
+
+        # Le compteur ne sort PLUS du code. Il gouvernait le modele, qui
+        # produisait alors « la question numero quatre » au lieu de mener un
+        # entretien : rien dans « [3 question(s) posee(s), encore 2] »
+        # n'invite a reagir a ce qui vient d'etre dit.
+        #
+        # On lui donne desormais ce qu'un garde a reellement en tete : ce
+        # qu'il doit etablir. Le compteur reste, mais uniquement pour la
+        # bascule de grammaire — invisible du modele.
+        sujets = "\n".join(
+            f"  - {sujet}" for sujet in s["interrogatoire"]["sujets"]
+        )
+        rappel = (
+            "[Ce que le controle doit etablir :\n"
+            f"{sujets}\n"
+            "Reagis d'abord a ce que le visiteur vient de dire, puis enchaine "
+            "sur un point encore obscur. Ne repose jamais une question deja posee.]"
+        )
+
         if e.nb_questions >= e.questions_max:
             return (
-                f"[{e.nb_questions} questions posees. Rends ton verdict MAINTENANT.\n"
+                f"{rappel}\n"
+                "[L'entretien a assez dure. Rends ton verdict MAINTENANT.\n"
                 f"Si tu accordes : {s['verdicts']['accepte']['objectif'].strip()}\n"
                 f"Si tu refuses : {s['verdicts']['refus']['objectif'].strip()}]"
             )
-        restant = e.questions_max - e.nb_questions
+
+        if e.nb_questions < e.questions_min:
+            return f"{rappel}\n[Trop de points restent obscurs pour conclure.]"
+
         return (
-            f"[{e.nb_questions} questions posees. Tu peux poursuivre "
-            f"({restant} au maximum) ou rendre ton verdict.]"
+            f"{rappel}\n"
+            "[Si l'essentiel est etabli, tu peux rendre ton verdict. "
+            "Sinon, poursuis.]"
         )
 
     def _construire_prompt(self, entree_visiteur: str) -> str:
