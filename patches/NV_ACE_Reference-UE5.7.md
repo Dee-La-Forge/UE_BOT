@@ -145,3 +145,43 @@ moteur — les modules ACE se chargent en `PreDefault` et `PreLoadingScreen`,
 donc avant le module runtime de LiveLink. L'asset n'est pas utilise par le
 projet aujourd'hui, mais c'est precisement l'AnimBP qui recevra la pose
 LiveLink d'Audio2Face. A traiter avant de cabler le visage.
+
+## ABP_MH_LiveLink : hypothese testee, ecartee
+
+Depuis l'installation d'ACE, `Content/MetaHumans/Common/Animation/ABP_MH_LiveLink`
+echoue a compiler au demarrage. Zero occurrence dans les journaux
+anterieurs : le plugin en est bien la cause.
+
+Cause racine, en tete de la cascade d'une vingtaine de messages :
+
+```
+VerifyImport: Failed to find script package for import object 'Package /Script/LiveLink'
+VerifyImport: Failed to find script package for import object 'Package /Script/LiveLinkGraphNode'
+```
+
+L'asset est charge dix-huit secondes avant l'initialisation du moteur.
+
+**Hypothese** : les modules d'ACE se chargent en `PreDefault` et
+`PreLoadingScreen`, ceux de LiveLink tous en `Default`. `ACEGraphNode` en
+`PreDefault` enregistrerait ses noeuds d'AnimGraph avant que
+`/Script/LiveLinkGraphNode` n'existe.
+
+**Test** : `ACEGraphNode` passe de `PreDefault` a `Default`.
+
+**Resultat** : aucun effet. Vingt occurrences, identiques. ACE continue de
+se charger normalement — le changement etait sans danger, mais sans
+benefice. **Revenu a la valeur d'origine de NVIDIA.**
+
+Le declencheur est donc ailleurs : `AIMWrapper` en `PreLoadingScreen`, ou
+un effet de bord du montage des assets du plugin.
+
+### Pourquoi on n'insiste pas
+
+L'asset est reference par les trois avatars, donc non supprimable. Mais
+depuis le montage Audio2Face, `UAvatarSwitcherComponent::PreparerAudio2Face`
+impose `Face_AnimBP` au maillage facial **au spawn**. Le role de
+`ABP_MH_LiveLink` a l'execution est donc repris.
+
+Ce qui reste est du bruit au demarrage de l'editeur, sur un asset dont la
+fonction est superseded. A reprendre si un defaut visuel apparaissait sur
+un avatar — ce serait alors le premier endroit ou regarder.
