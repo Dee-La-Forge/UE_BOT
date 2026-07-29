@@ -30,6 +30,10 @@ class Transcripteur:
         self._nom = config.get("modele", "small")
         self._peripherique = config.get("peripherique", "cpu")
         self._type_calcul = config.get("type_calcul", "int8")
+        # Amorce de domaine : orienter Whisper vers le vocabulaire du poste
+        # frontiere coute zero latence et reduit les inventions sur les
+        # fragments courts — la ou naissaient les « pandinvestigation ».
+        self._contexte = config.get("contexte") or None
         self._modele = self._charger()
 
     def _charger(self) -> WhisperModel:
@@ -86,6 +90,7 @@ class Transcripteur:
                 vad_filter=self._vad,
                 beam_size=1,          # greedy : on privilegie la latence
                 condition_on_previous_text=False,
+                initial_prompt=self._contexte,
             )
             return " ".join(s.text.strip() for s in segments).strip()
         except Exception:

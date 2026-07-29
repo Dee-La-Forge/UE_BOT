@@ -1,7 +1,7 @@
-# Grammaire de la phase d'entretien — AVANT le plancher de 5 questions.
+# Grammaire de la phase d'entretien — AVANT le plancher de questions.
 #
 # Le Narrative Design impose : "Do NOT deliver a verdict or transition
-# before 5 questions are answered." Convai s'en remettait au respect de la
+# before N questions are answered." Convai s'en remettait au respect de la
 # consigne par le modele. Ici, le verdict est GRAMMATICALEMENT impossible :
 # EN_COURS est la seule valeur productible.
 #
@@ -9,26 +9,41 @@
 
 root ::= replique emotion verdict
 
-# UNE SEULE phrase pendant l'interrogatoire.
+# Une reaction breve FACULTATIVE, puis LA question — obligatoirement une
+# vraie interrogative.
 #
-# C'est la traduction litterale de la regle du Narrative Design : "Ask ONE
-# question at a time." Elle cesse d'etre une consigne pour devenir une
-# impossibilite.
+# L'ancienne regle (une seule phrase, 1 a 110 caracteres) avait deux effets
+# pervers, tous deux releves en essai reel le 29/07/2026 :
 #
-# Sans borne du tout, le modele deroulait le scenario entier en une
-# replique -- il jouait les deux roles : "Objets a declarer ? Aucun.
-# Moyens de paiement ? Pas de questions. Bon sejour." La cause tient a
-# l'interdiction de "<" ci-dessous : elle bloque aussi son jeton d'arret
-# <|im_end|>, si bien qu'il ne peut plus s'interrompre de lui-meme.
+#   1. Aucun plancher : « Statut ? » satisfaisait la grammaire. Pousse par
+#      la liste d'interdits du prompt, le 3B se refugiait dans la sortie la
+#      plus courte encore inedite — l'entretien degenerait en telegraphe
+#      (« souvenirs de guerre ? », puis « souvenirs de paix ? »).
+#   2. Une seule phrase : impossible de reagir a la reponse ET de poser la
+#      question suivante. L'agent enchainait comme un formulaire — aucune
+#      reponse du visiteur n'avait de consequence audible, et le dialogue
+#      ne ressemblait a rien d'humain.
 #
-# Avec deux phrases autorisees, il comblait la seconde par du remplissage
-# ("Sensible."). Une seule suffit a poser une question.
-replique ::= phrase
+# D'ou les deux regles ci-dessous. La reaction est plafonnee court (60) :
+# un constat sec, pas une tirade — et elle se termine par . ou !, jamais
+# par ?, sinon le modele y logerait sa question et remplirait la vraie de
+# remplissage. La question exige 25 caracteres et le point d'interrogation :
+# sujet, verbe, vraie interrogative. Comme pour le verdict, la consigne du
+# prompt cesse d'etre un voeu pour devenir une impossibilite.
+#
+# L'ancien garde-fou reste vrai : sans borne du tout, le modele deroulait
+# le scenario entier en une replique (l'interdiction de "<" ci-dessous
+# bloque aussi son jeton d'arret <|im_end|>, il ne peut plus s'interrompre
+# de lui-meme). Le plafond par phrase et la structure a deux phrases max
+# le contiennent toujours.
+replique ::= (reaction " ")? question
 
 # "<" est exclu : sans cela, Qwen laisse fuir ses jetons speciaux
 # (<tool_call>, <|im_end|>) dans le texte destine au TTS.
 # Le saut de ligne l'est aussi : une replique parlee tient sur une ligne.
-phrase ::= [^\[<.!?\n]{1,110} [.!?]
+reaction ::= [^\[<.!?\n]{2,60} [.!]
+
+question ::= [^\[<.!?\n]{25,110} "?"
 
 # Neutral est RETIRE pendant l'interrogatoire.
 #

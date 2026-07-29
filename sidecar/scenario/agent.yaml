@@ -124,13 +124,17 @@ interrogatoire:
     - "denrees alimentaires"
     - "fruits exotiques"
 
-  # Dix questions, puis cloture. La persona dit « MAXIMUM 10 questions.
-  # Apres la 10e, il clot la conversation dans un message separe. »
+  # La persona dit « MAXIMUM 10 questions. Apres la 10e, il clot la
+  # conversation dans un message separe. » — c'est le plafond, applique par
+  # bascule de grammaire GBNF (verdict impose a cloture.gbnf).
   #
-  # Le plancher est aussi applique par le code, via la bascule de grammaire
-  # GBNF : le jeton de verdict n'est pas productible avant. La consigne ne
-  # depend donc pas du seul bon vouloir du modele.
-  questions_min: 10
+  # Le plancher est descendu de 10 a 6 le 29/07/2026 : a min = max, la
+  # grammaire intermediaire verdict.gbnf (le modele DECIDE de clore ou non)
+  # etait inatteignable, et chaque entretien durait exactement dix
+  # questions quoi que reponde le visiteur — un compteur, pas un controle.
+  # Entre la 6e et la 10e, le verdict peut desormais tomber quand
+  # l'entretien l'a merite.
+  questions_min: 6
   questions_max: 10
 
 # --- Sections terminales ------------------------------------------------

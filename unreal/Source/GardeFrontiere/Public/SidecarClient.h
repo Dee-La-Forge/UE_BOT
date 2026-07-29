@@ -78,6 +78,13 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Garde Frontiere|Sidecar")
 	void SignalerAbsence();
 
+	/**
+	 * Le visiteur n'a rien dit depuis DelaiReponseVisiteur : l'agent le
+	 * relance. Le sidecar traite ce silence comme un tour de parole.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Garde Frontiere|Sidecar")
+	void SignalerSilence();
+
 	/** Remise a zero explicite (abandon, timeout, maintenance). */
 	UFUNCTION(BlueprintCallable, Category = "Garde Frontiere|Sidecar")
 	void ReinitialiserSession();

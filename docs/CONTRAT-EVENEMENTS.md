@@ -15,6 +15,7 @@ scenographie sans toucher a l'IA, et inversement.
 | `presence.detectee` | `{}` | `BP_LidarManager` passe sous le seuil de distance |
 | `presence.perdue` | `{}` | `AbsenceCount` depasse le seuil |
 | `audio.visiteur` | *binaire PCM16 16 kHz mono* | SileroVAD a clos un segment de parole |
+| `visiteur.silencieux` | `{}` | `DelaiReponseVisiteur` ecoule apres la fin d'une replique — l'agent relance |
 | `session.reset` | `{}` | abandon, timeout, ou remise a zero manuelle |
 
 ## sidecar → Unreal

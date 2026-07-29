@@ -299,6 +299,7 @@ void AGuardSessionManager::DemarrerSession()
 	}
 
 	DernierVerdict = EGuardVerdict::EnCours;
+	bRelanceFaite = false;
 
 	// L'index reel est renseigne par SurAvatarChange, une fois la
 	// permutation faite par UAvatarSwitcherComponent.
@@ -376,6 +377,14 @@ void AGuardSessionManager::TransmettreParoleVisiteur(
 
 		Sidecar->EnvoyerAudioVisiteur(PCM16);
 		ArmerAbandon();   // le visiteur parle : on repousse l'abandon
+
+		// Le visiteur a repondu : le silence en cours est rompu, et une
+		// future relance redevient possible.
+		bRelanceFaite = false;
+		if (UWorld* Monde = GetWorld())
+		{
+			Monde->GetTimerManager().ClearTimer(MinuterieRelance);
+		}
 
 		// Meme surveillance qu'a l'ouverture : un enonce transmis doit
 		// produire une replique dans un delai borne, sinon le sidecar est
@@ -649,6 +658,13 @@ void AGuardSessionManager::SurParoleDebut(const FString& Texte, EGuardEmotion Em
 	// Le sidecar vient de repondre : la surveillance a rempli son office.
 	AnnulerSurveillanceIA();
 
+	// L'agent parle : la fenetre de silence du visiteur ne court plus.
+	// Elle sera re-armee a la fin de la replique.
+	if (UWorld* Monde = GetWorld())
+	{
+		Monde->GetTimerManager().ClearTimer(MinuterieRelance);
+	}
+
 	// Nouvelle replique : on clot le flux precedent s'il en restait un, puis
 	// on autorise l'ouverture d'un nouveau. Hors de cette fenetre, aucune
 	// trame ne peut ouvrir de session — c'est ce qui empeche une trame en
@@ -694,6 +710,18 @@ void AGuardSessionManager::SurParoleFin()
 	FermerSessionA2F();
 
 	ArmerAbandon();
+
+	// C'est maintenant au visiteur de parler. S'il ne dit rien d'ici
+	// DelaiReponseVisiteur, l'agent le relancera — une fois.
+	if (ConversationEnCours() && !bRelanceFaite)
+	{
+		if (UWorld* Monde = GetWorld())
+		{
+			Monde->GetTimerManager().SetTimer(
+				MinuterieRelance, this, &AGuardSessionManager::SurSilenceVisiteur,
+				FMath::Max(DelaiReponseVisiteur, 1.f), false);
+		}
+	}
 }
 
 void AGuardSessionManager::SurVerdict(EGuardVerdict Decision)
@@ -800,6 +828,26 @@ void AGuardSessionManager::TenterReconnexion()
 	}
 }
 
+void AGuardSessionManager::SurSilenceVisiteur()
+{
+	// La fenetre a pu se fermer entre l'armement et l'echeance.
+	if (!ConversationEnCours() || bRelanceFaite)
+	{
+		return;
+	}
+
+	if (Sidecar && Sidecar->EstConnecte())
+	{
+		UE_LOG(LogGardeFrontiere, Log,
+			TEXT("Visiteur muet depuis %.0f s — relance"), DelaiReponseVisiteur);
+		bRelanceFaite = true;
+		Sidecar->SignalerSilence();
+		ArmerSurveillanceIA();
+	}
+	// Sidecar absent : rien. La replique de secours d'une relance ratee
+	// n'apporterait rien de plus que l'abandon qui suivra.
+}
+
 // -- Surveillance applicative du sidecar ----------------------------------
 
 void AGuardSessionManager::ArmerSurveillanceIA()
@@ -865,6 +913,7 @@ void AGuardSessionManager::AnnulerMinuteries()
 		T.ClearTimer(MinuterieAbandon);
 		T.ClearTimer(MinuterieSortie);
 		T.ClearTimer(MinuterieSurveillanceIA);
+		T.ClearTimer(MinuterieRelance);
 
 		// PAS MinuterieReconnexion : elle n'appartient pas a la session.
 		// L'effacer ici tuait la boucle de reconnexion pour de bon — la

@@ -119,20 +119,25 @@ class Pipeline:
         sujets = "\n".join(
             f"  - {sujet}" for sujet in s["interrogatoire"]["sujets"]
         )
-        # Pas de « reagis a ce qui vient d'etre dit » : la persona l'interdit
-        # explicitement — Macerio ne repete jamais la reponse du visiteur.
-        # Je l'avais ajoute avant de disposer du personnage, en croyant rendre
-        # l'entretien conversationnel. C'etait le contraire de ce qu'il est.
-        # Les questions deja posees, litteralement.
+        # REAGIR n'est pas REPETER. La persona interdit de repeter la reponse
+        # du visiteur ; elle exige au contraire de relever ce qui est flou ou
+        # contradictoire (« ce qui est evasif doit etre repris. C'est ton
+        # metier »). J'avais retire toute consigne de reaction en les
+        # confondant : l'agent enchainait alors ses questions comme un
+        # formulaire, aucune reponse n'avait de consequence audible, et le
+        # dialogue ne ressemblait a rien d'humain. La grammaire reserve
+        # desormais une phrase breve a cette reaction, avant la question.
         #
-        # « Tu ne reposes jamais une question deja posee » ne suffit pas a un
-        # modele de 3 milliards de parametres : il faut le lui montrer. Sans
-        # cela, face a des reponses qu'il ne comprend pas, il rabache —
-        # releve en essai reel, cinq fois « pourquoi vis-tu ici » d'affilee.
+        # Les questions deja posees, litteralement : « tu ne reposes jamais
+        # une question deja posee » ne suffit pas a un 3B, il faut le lui
+        # montrer — releve en essai reel, cinq fois « pourquoi vis-tu ici »
+        # d'affilee. Mais les QUATRE dernieres seulement : a huit, la liste
+        # d'interdits dominait le prompt et poussait le modele vers la seule
+        # sortie sure — des questions d'un mot, inedites par construction.
         deja = [agent for _, agent in self.historique if agent]
         interdites = ""
         if deja:
-            liste = "\n".join(f"  - {q}" for q in deja[-8:])
+            liste = "\n".join(f"  - {q}" for q in deja[-4:])
             interdites = (
                 "\n[Tu as DEJA dit ceci. Ne le repete pas, ne le reformule "
                 f"pas, passe a autre chose :\n{liste}]"
@@ -141,8 +146,12 @@ class Pipeline:
         rappel = (
             "[Ce sur quoi porte le controle :\n"
             f"{sujets}\n"
-            "Enchaine sur un point encore obscur, sans repeter ce qui vient "
-            "d'etre dit, sans reemployer une tournure deja utilisee.\n"
+            "Commence par UNE phrase tres breve qui reagit a ce que le "
+            "visiteur vient de dire — doute, reproche, incoherence relevee — "
+            "sans le repeter mot pour mot. Puis pose UNE question complete, "
+            "avec sujet et verbe, sur un point encore obscur.\n"
+            "Si sa reponse est du charabia ou hors sujet, fais-le lui "
+            "remarquer sechement et repose ta question autrement.\n"
             "VOUVOIE le visiteur : « vous », jamais « tu ».]"
             f"{interdites}"
         )
@@ -241,6 +250,27 @@ class Pipeline:
         m.marquer("stt_fin")   # pas de transcription : l'etape est nulle
 
         async for element in self._generer("", m):
+            yield element
+
+    async def relance_silence(
+        self,
+        mesure: Mesure | None = None,
+    ) -> AsyncIterator[MorceauAudio | Replique]:
+        """Le visiteur ne repond pas : l'agent le somme de parler.
+
+        Declenche par Unreal (DelaiReponseVisiteur ecoule apres la fin d'une
+        replique). Le silence entre dans l'historique comme un tour visiteur
+        a part entiere : un garde qui attend une reponse et ne l'obtient pas
+        le fait peser sur la suite de l'entretien — et le tour compte dans
+        les questions, comme n'importe quel autre.
+        """
+        m = mesure or Mesure()
+        m.marquer("debut")
+        m.marquer("stt_fin")   # pas de transcription : l'etape est nulle
+
+        async for element in self._generer(
+            "[Le visiteur ne repond pas. Somme-le de repondre.]", m
+        ):
             yield element
 
     async def _generer(

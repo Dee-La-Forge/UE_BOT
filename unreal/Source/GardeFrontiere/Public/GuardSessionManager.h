@@ -173,7 +173,16 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Garde Frontiere|Scenographie")
 	bool bAvatarEnVeille = true;
 
-	/** Delai sans reponse du visiteur avant relance. */
+	/**
+	 * Delai sans reponse du visiteur avant relance.
+	 *
+	 * Arme quand l'agent finit de parler, annule des que le visiteur
+	 * repond. A echeance, le sidecar recoit `visiteur.silencieux` et
+	 * l'agent somme le visiteur de repondre — UNE fois par silence : si le
+	 * visiteur se tait encore apres la relance, c'est l'abandon
+	 * (DelaiAbandon) qui tranche, sinon les deux minuteries se
+	 * repousseraient l'une l'autre indefiniment.
+	 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Garde Frontiere|Delais",
 		meta = (ClampMin = "1.0", Units = "s"))
 	float DelaiReponseVisiteur = 12.f;
@@ -433,10 +442,24 @@ private:
 	void AnnulerSurveillanceIA();
 	UFUNCTION() void SurSilenceIA();
 
+	// Relance d'un visiteur muet, au plus une par silence.
+	UFUNCTION() void SurSilenceVisiteur();
+
 	FTimerHandle MinuterieAbandon;
 	FTimerHandle MinuterieSortie;
 	FTimerHandle MinuterieReconnexion;
 	FTimerHandle MinuterieSurveillanceIA;
+	FTimerHandle MinuterieRelance;
+
+	/**
+	 * Une relance a deja ete faite pour le silence en cours.
+	 *
+	 * Remise a faux quand le visiteur parle. Sans ce garde, la relance
+	 * repoussait l'abandon (l'agent parle -> ArmerAbandon) qui repoussait la
+	 * relance : un visiteur parti sans etre vu du capteur aurait ete
+	 * relance en boucle, indefiniment.
+	 */
+	bool bRelanceFaite = false;
 
 	/** Distincte des cles du capteur, pour que les deux messages coexistent. */
 	static constexpr uint64 CleAffichagePhase = 8810;

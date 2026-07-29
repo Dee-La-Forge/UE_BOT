@@ -141,6 +141,7 @@ void USidecarClient::EnvoyerEvenement(const FString& Nom)
 
 void USidecarClient::SignalerPresence()      { EnvoyerEvenement(TEXT("presence.detectee")); }
 void USidecarClient::SignalerAbsence()       { EnvoyerEvenement(TEXT("presence.perdue")); }
+void USidecarClient::SignalerSilence()       { EnvoyerEvenement(TEXT("visiteur.silencieux")); }
 void USidecarClient::ReinitialiserSession()  { EnvoyerEvenement(TEXT("session.reset")); }
 
 void USidecarClient::EnvoyerAudioVisiteur(const TArray<uint8>& PCM16)

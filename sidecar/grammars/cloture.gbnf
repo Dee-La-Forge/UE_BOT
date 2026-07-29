@@ -9,9 +9,11 @@
 root ::= replique emotion verdict
 
 # Au plus deux phrases — voir entretien.gbnf pour le detail.
+# Plancher a 12 : bloque le remplissage d'un mot (« coyote. », releve en
+# essai reel) tout en laissant passer une cloture seche.
 replique ::= phrase (" " phrase)?
 
-phrase ::= [^\[<.!?\n]{1,110} [.!?]
+phrase ::= [^\[<.!?\n]{12,110} [.!?]
 
 emotion ::= "[EMOTION:" ("Stare" | "Concerned" | "Angry" | "Neutral" | "Happy") "]"
 

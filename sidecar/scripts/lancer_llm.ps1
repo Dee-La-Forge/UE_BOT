@@ -7,7 +7,13 @@
 # sidecar et Unreal survivent, et on redemarre le LLM seul.
 
 param(
-    [string]$Modele = "qwen2.5-7b-instruct-q4_k_m.gguf",
+    # Le 3B : c'est le seul present dans models/llm/. Le defaut pointait
+    # vers un 7B jamais telecharge — et l'etiquette de config.yaml, elle,
+    # disait 3B : les mesures s'attribuaient au mauvais modele. Si la
+    # qualite de dialogue reste insuffisante apres les reglages de prompt
+    # et de grammaire, telecharger le 7B est le levier suivant (~150 ms de
+    # plus au premier token, mesure).
+    [string]$Modele = "qwen2.5-3b-instruct-q4_k_m.gguf",
     [int]$Port = 8080,
     [int]$Contexte = 4096,
     [int]$CouchesGpu = 99   # 99 = tout le modele sur GPU

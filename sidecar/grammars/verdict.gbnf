@@ -6,9 +6,11 @@
 root ::= replique emotion verdict
 
 # Au plus deux phrases — voir entretien.gbnf pour le detail.
+# Plancher a 12 : bloque le remplissage d'un mot (« Sensible. », « coyote. »)
+# tout en laissant passer une cloture seche (« Acces refuse. »).
 replique ::= phrase (" " phrase)?
 
-phrase ::= [^\[<.!?\n]{1,110} [.!?]
+phrase ::= [^\[<.!?\n]{12,110} [.!?]
 
 # Neutral et Happy reapparaissent ici : la section "accepte" demande une
 # cloture "froide, breve, administrative", ce que Neutral traduit bien.

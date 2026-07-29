@@ -14,13 +14,24 @@ stt:
   # comptee. La mesure a tranche : 1932 ms sur CPU contre 301 ms sur GPU
   # pour le meme modele, soit 6,4x. Le STT etait 90 % de la latence totale.
   #
-  #   small / cuda / float16 :  301 ms   <- retenu
+  #   small / cuda / float16 :  301 ms
   #   base  / cuda / float16 :  100 ms   (transcription degradee)
   #   small / cpu  / int8    : 1932 ms
-  modele: "small"     # tiny | base | small | medium | large-v3
+  #
+  # Passe de small a medium le 29/07/2026 : small massacrait les enonces
+  # courts en conditions reelles (« S'attu. », « pandinvestigation », « Je
+  # le viens de Paris ») et l'agent repondait a du charabia. Le GPU a la
+  # marge (46 % d'usage releve en session). A remesurer ; revenir a small
+  # si la latence STT redevient le poste dominant.
+  modele: "medium"    # tiny | base | small | medium | large-v3
   peripherique: "cuda"
   type_calcul: "float16"
   langue: "fr"
+  # Amorce donnee a Whisper a chaque transcription. Sur un fragment court
+  # et ambigu, le modele complete avec le vocabulaire de l'amorce plutot
+  # qu'avec ses hallucinations d'entrainement (« Sous-titres realises par
+  # la communaute d'Amara.org »).
+  contexte: "Controle frontalier. Le visiteur decline son identite, le motif de sa visite, sa destination, ce qu'il transporte."
   # REMIS A true le 29/07/2026, apres l'avoir coupe le matin meme.
   #
   # Je l'avais desactive en constatant « VAD filter removed 00:00.000 of

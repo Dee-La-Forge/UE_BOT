@@ -67,10 +67,15 @@ public:
 	 * naturelles atteignent 400 ms. Trop long, la borne parait lente a
 	 * repondre. Le VAD tranche parole/silence ; ce delai tranche
 	 * pause/fin d'enonce, ce qui n'est pas la meme decision.
+	 *
+	 * Monte de 0.75 a 0.9 s le 29/07/2026 : en essai reel, des phrases
+	 * etaient coupees a la respiration et arrivaient amputees au STT
+	 * (« Je vais me poser de m'arreter le cheval chez toi »). 150 ms de
+	 * latence contre des enonces entiers : l'echange est gagnant.
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Micro|Segmentation",
 		meta = (ClampMin = "0.1", Units = "s"))
-	float SilenceFinSegment = 0.75f;
+	float SilenceFinSegment = 0.9f;
 
 	/**
 	 * En deca, on n'envoie pas : Whisper INVENTE sur les fragments courts.
@@ -79,14 +84,21 @@ public:
 	 * et le sidecar recevait des demi-syllabes. Whisper rendait alors ses
 	 * hallucinations d'entrainement — « Sous-titres realises par la
 	 * communaute d'Amara.org » sur du quasi-silence, « Merci beaucoup » sur
-	 * un souffle. L'agent enchainait ses questions sans rien comprendre, ce
-	 * qui passait pour un defaut du modele alors que l'entree etait vide.
+	 * un souffle. Le seuil etait alors monte a 0.7 s.
 	 *
-	 * Mieux vaut ignorer un debut de phrase que repondre a une invention.
+	 * REDESCENDU a 0.4 s le meme jour : a 0.7, un « Oui. » ou un « Non. »
+	 * du visiteur — la moitie des reponses naturelles d'un interrogatoire —
+	 * etait jete avant meme d'etre transcrit, et l'agent enchainait comme si
+	 * personne n'avait parle. Le dialogue etait injouable.
+	 *
+	 * Ce qui a change entre-temps et permet de redescendre : le VAD Silero
+	 * borne deja les segments, le controle de niveau ecarte les segments
+	 * muets, et le sidecar donne desormais a Whisper une amorce de domaine
+	 * (stt.contexte) qui reduit ses inventions sur les fragments courts.
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Micro|Segmentation",
 		meta = (ClampMin = "0.05", Units = "s"))
-	float DureeMinSegment = 0.7f;
+	float DureeMinSegment = 0.4f;
 
 	/**
 	 * Silence conserve en queue d'enonce avant transmission.

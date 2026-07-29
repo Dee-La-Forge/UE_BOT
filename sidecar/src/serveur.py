@@ -162,30 +162,13 @@ class Serveur:
         Le repli n'est tente que si RIEN n'a ete prononce. Une panne survenue
         en cours de replique ferait sinon parler l'agent deux fois.
         """
-        seq = 0
         a_parle = False
 
         # Sous le verrou de parole : un enonce du visiteur arrivant pendant
         # l'accueil attendra la fin de l'intro au lieu de s'y entrelacer.
         async with self._parole:
             try:
-                async for element in self.pipeline.intro():
-                    if isinstance(element, MorceauAudio):
-                        if not a_parle:
-                            await self._envoyer(ws, "parole.debut", texte=element.texte,
-                                                emotion=self._emotion_pressentie())
-                            a_parle = True
-                        await self._envoyer_audio(ws, element, seq)
-                        seq += 1
-                    else:
-                        if a_parle:
-                            await self._envoyer(ws, "parole.fin")
-                        elif element.texte:
-                            # Replique textuelle sans audio : la prononcer,
-                            # sinon l'agent conclut en silence.
-                            await self._dire(ws, element.texte, element.emotion)
-                            a_parle = True
-                        await self._conclure(ws, element)
+                a_parle = await self._jouer_flux(ws, self.pipeline.intro())
 
             except asyncio.CancelledError:
                 # Le visiteur est parti pendant l'accueil : on se tait, sans
@@ -199,6 +182,35 @@ class Serveur:
             if not a_parle:
                 _log.warning("intro muette — repli sur la replique d'accueil")
                 await self._replique_de_repli(ws, "accueil")
+
+    async def _jouer_flux(self, ws: ServerConnection, flux) -> bool:
+        """Streame un flux de MorceauAudio puis sa Replique finale.
+
+        Rend vrai si l'agent a effectivement parle. Une Replique portant du
+        texte sans qu'aucun audio ne l'ait precedee — le « rien compris » du
+        STT — est synthetisee ici : avant, seul l'evenement emotion partait,
+        et l'agent demandait de repeter... en silence.
+        """
+        seq = 0
+        a_parle = False
+
+        async for element in flux:
+            if isinstance(element, MorceauAudio):
+                if not a_parle:
+                    await self._envoyer(ws, "parole.debut", texte=element.texte,
+                                        emotion=self._emotion_pressentie())
+                    a_parle = True
+                await self._envoyer_audio(ws, element, seq)
+                seq += 1
+            else:
+                if a_parle:
+                    await self._envoyer(ws, "parole.fin")
+                elif element.texte:
+                    await self._dire(ws, element.texte, element.emotion)
+                    a_parle = True
+                await self._conclure(ws, element)
+
+        return a_parle
 
     async def _traiter_audio(self, ws: ServerConnection, brut: bytes) -> None:
         audio = np.frombuffer(brut, dtype=np.int16).astype(np.float32) / 32768.0
@@ -220,31 +232,11 @@ class Serveur:
                 return
 
             mesure = Mesure()
-            seq = 0
-            a_parle = False
 
             try:
-                async for element in self.pipeline.tour_de_parole(
-                    audio, TAUX_VISITEUR, mesure
-                ):
-                    if isinstance(element, MorceauAudio):
-                        if not a_parle:
-                            await self._envoyer(ws, "parole.debut", texte=element.texte,
-                                                emotion=self._emotion_pressentie())
-                            a_parle = True
-                        await self._envoyer_audio(ws, element, seq)
-                        seq += 1
-                    else:
-                        if a_parle:
-                            await self._envoyer(ws, "parole.fin")
-                        elif element.texte:
-                            # Replique textuelle SANS audio — le cas
-                            # « rien compris » du STT. On la prononce :
-                            # avant, seul l'evenement emotion partait, et
-                            # l'agent demandait de repeter... en silence.
-                            await self._dire(ws, element.texte, element.emotion)
-                            a_parle = True
-                        await self._conclure(ws, element)
+                await self._jouer_flux(
+                    ws, self.pipeline.tour_de_parole(audio, TAUX_VISITEUR, mesure)
+                )
 
             except websockets.ConnectionClosed:
                 # Unreal est parti en plein streaming : rien a rejouer, la
@@ -273,6 +265,29 @@ class Serveur:
                 "modele_llm": self.config["llm"]["modele"],
                 "questions": self.pipeline.etat.nb_questions,
             })
+
+    async def _traiter_silence(self, ws: ServerConnection) -> None:
+        """Unreal signale un visiteur muet : l'agent le relance.
+
+        Meme discipline que les tours de parole — verrou, gardes, replis.
+        """
+        async with self._parole:
+            if self.pipeline.etat.terminee:
+                return
+
+            try:
+                await self._jouer_flux(ws, self.pipeline.relance_silence())
+
+            except websockets.ConnectionClosed:
+                _log.info("connexion fermee pendant la relance")
+                return
+
+            except Exception:
+                # Une relance qui echoue n'a pas de repli dedie : le repli
+                # « incompris » accuserait un visiteur qui n'a rien dit. On
+                # se tait, l'abandon d'Unreal fera son office.
+                _log.exception("echec de la relance")
+                return
 
     def _emotion_pressentie(self) -> str:
         """Emotion annoncee a l'ouverture de la replique.
@@ -344,6 +359,16 @@ class Serveur:
             # visiteur, ni son depart ne seraient traites.
             self._tache_intro = asyncio.create_task(self._jouer_intro(ws))
             self._tache_intro.add_done_callback(self._retirer_tache)
+
+        elif evenement == "visiteur.silencieux":
+            # Unreal a laisse DelaiReponseVisiteur au visiteur apres la fin
+            # de la derniere replique : personne n'a parle, l'agent relance.
+            if not self._occupe.locked():
+                _log.warning("silence signale hors session — ignore")
+                return
+            tache = asyncio.create_task(self._traiter_silence(ws))
+            self._taches_parole.add(tache)
+            tache.add_done_callback(self._retirer_tache)
 
         elif evenement in ("presence.perdue", "session.reset"):
             # Le visiteur part : on coupe l'intro ET le tour en cours plutot
