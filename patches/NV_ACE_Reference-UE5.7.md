@@ -95,3 +95,53 @@ Les avertissements de deprecation subsistent, notamment `FInputGesture` dans
 `OmniverseLiveLinkCommands.cpp`. Ils n'empechent rien aujourd'hui ; ils
 casseront a une version future. A reprendre si le plugin doit vivre
 longtemps sur ce projet.
+
+## Piege de l'installation : ne pas exclure tous les dossiers `Binaries`
+
+Le plugin porte DEUX sortes de `Binaries`, et elles n'ont rien a voir :
+
+```
+NV_ACE_Reference/Binaries/                       artefacts UE 5.6 — a exclure
+NV_ACE_Reference/ThirdParty/Nvigi/Binaries/      1,1 Go de natif NVIDIA — INDISPENSABLE
+```
+
+Un `robocopy /XD Binaries` exclut les deux, par nom, a tous les niveaux de
+l'arborescence. Le plugin se charge alors sans erreur de compilation, et
+echoue silencieusement au demarrage :
+
+```
+LogWindows: Failed to load '.../ThirdParty/Nvigi/Binaries/Win64/nvaim.core.framework.dll'
+(GetLastError=126)
+```
+
+`nvaim.core.framework.dll` est le coeur du moteur d'inference. Sans lui,
+aucune animation faciale, et rien d'autre ne le signale.
+
+**Exclure `Binaries` et `Intermediate` uniquement a la RACINE du plugin.**
+
+Verification apres copie : `ThirdParty/` doit peser **3,5 Go**. S'il n'en
+fait que 2,4, les binaires natifs manquent.
+
+## Etat au 29/07/2026
+
+Le plugin se charge et s'initialise sur UE 5.7 :
+
+```
+Loaded NvAudio2FaceJames plugin version 2.4.0-20250610-2270
+Loaded AIM core DLL from .../nvaim.core.framework.dll
+Found adapter 'NVIDIA GeForce RTX 3090 Ti'  # shader GFLOPS: 41932.80
+```
+
+**Reste ouvert :** `Content/MetaHumans/Common/Animation/ABP_MH_LiveLink`
+echoue a compiler au demarrage. Cause racine, en tete de cascade :
+
+```
+VerifyImport: Failed to find script package for import object 'Package /Script/LiveLink'
+VerifyImport: Failed to find script package for import object 'Package /Script/LiveLinkGraphNode'
+```
+
+L'asset est charge a 12:31:23, soit 18 secondes avant l'initialisation du
+moteur — les modules ACE se chargent en `PreDefault` et `PreLoadingScreen`,
+donc avant le module runtime de LiveLink. L'asset n'est pas utilise par le
+projet aujourd'hui, mais c'est precisement l'AnimBP qui recevra la pose
+LiveLink d'Audio2Face. A traiter avant de cabler le visage.
