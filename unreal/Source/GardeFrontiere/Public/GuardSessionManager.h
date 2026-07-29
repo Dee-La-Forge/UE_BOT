@@ -116,6 +116,21 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Garde Frontiere|Audio2Face")
 	FName FournisseurA2F;
 
+	/**
+	 * Joue aussi la voix par AgentVoiceComponent, en plus d'Audio2Face.
+	 *
+	 * Diagnostic : le composant ACE est cense jouer lui-meme le son qu'il
+	 * renvoie. S'il reste muet alors qu'Audio2Face produit bien ses trames,
+	 * ceci permet d'entendre la replique et de voir si le visage s'anime —
+	 * donc de savoir si le defaut porte sur la lecture seule ou sur toute la
+	 * chaine.
+	 *
+	 * A decocher une fois la lecture d'ACE reparee : les deux ensemble
+	 * feraient parler l'agent deux fois.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Garde Frontiere|Audio2Face")
+	bool bDoublerVoixPourDiagnostic = true;
+
 	// La rotation d'avatars appartient a UAvatarSwitcherComponent :
 	// selectionne le composant "Avatars" pour regler ClassesAvatars,
 	// TransformSpawn et l'anti-repetition.

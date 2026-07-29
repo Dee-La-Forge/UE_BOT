@@ -55,13 +55,22 @@ void AGuardSessionManager::BeginPlay()
 			// Audio2Face d'abord : son composant JOUE le son en plus d'animer
 			// le visage. Empiler la meme trame dans Voix ferait parler l'agent
 			// deux fois, avec un decalage.
-			if (OuvrirSessionA2F(Taux))
+			const bool bA2F = OuvrirSessionA2F(Taux);
+
+			if (bA2F)
 			{
 				const TArrayView<const int16> Echantillons(
 					reinterpret_cast<const int16*>(PCM16.GetData()), PCM16.Num() / 2);
 
 				SessionA2F->SendAudioSamples(Echantillons, false, NullOpt, nullptr);
-				return;
+
+				// Le composant ACE est cense jouer le son qu'il renvoie. Tant
+				// qu'il reste muet, on double par Voix pour entendre la
+				// replique et voir si le visage s'anime malgre tout.
+				if (!bDoublerVoixPourDiagnostic)
+				{
+					return;
+				}
 			}
 
 			// Repli : sans Audio2Face, la borne parle quand meme, bouche
