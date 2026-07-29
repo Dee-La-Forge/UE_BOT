@@ -286,17 +286,16 @@ int32 UAvatarSwitcherComponent::RetirerConvaiConversationnel(AActor* Avatar) con
 	return NbRetires;
 }
 
+UACEAudioCurveSourceComponent* UAvatarSwitcherComponent::TrouverComposantACE() const
+{
+	return AvatarCourant
+		? AvatarCourant->FindComponentByClass<UACEAudioCurveSourceComponent>()
+		: nullptr;
+}
+
 IACEAnimDataConsumer* UAvatarSwitcherComponent::TrouverConsommateurACE() const
 {
-	if (!AvatarCourant)
-	{
-		return nullptr;
-	}
-
-	UACEAudioCurveSourceComponent* Source =
-		AvatarCourant->FindComponentByClass<UACEAudioCurveSourceComponent>();
-
-	return Source;
+	return TrouverComposantACE();
 }
 
 void UAvatarSwitcherComponent::PreparerAudio2Face(AActor* Avatar) const

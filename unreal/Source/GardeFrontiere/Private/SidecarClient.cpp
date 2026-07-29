@@ -26,11 +26,26 @@ void USidecarClient::Connecter(const FString& Url)
 	Socket->OnClosed().AddUObject(this, &USidecarClient::SurFermeture);
 	Socket->OnMessage().AddUObject(this, &USidecarClient::TraiterMessage);
 	Socket->OnRawMessage().AddLambda(
-		[this](const void* Donnees, SIZE_T Taille, SIZE_T /*Restant*/)
+		[this](const void* Donnees, SIZE_T Taille, SIZE_T Restant)
 		{
-			TArray<uint8> Tampon;
-			Tampon.Append(static_cast<const uint8*>(Donnees), Taille);
-			TraiterBinaire(Tampon);
+			// Unreal livre les messages binaires par FRAGMENTS. Restant > 0
+			// annonce une suite. Traiter chaque fragment comme une trame
+			// complete etait faux a deux titres : une frontiere tombant sur
+			// un octet impair perdait une demi-valeur et decalait tout le
+			// reste d'un octet — du bruit a la place de la voix — et chaque
+			// fragment declenchait son propre tour de traitement.
+			//
+			// Nos trames TTS atteignent 16 000 octets : la fragmentation
+			// n'est pas une hypothese.
+			FragmentEnCours.Append(static_cast<const uint8*>(Donnees), Taille);
+
+			if (Restant > 0)
+			{
+				return;   // le message n'est pas fini
+			}
+
+			TraiterBinaire(FragmentEnCours);
+			FragmentEnCours.Reset();
 		});
 
 	UE_LOG(LogGardeFrontiere, Log, TEXT("Sidecar : connexion a %s"), *Url);

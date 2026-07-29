@@ -157,5 +157,14 @@ public:
 	 */
 	class IACEAnimDataConsumer* TrouverConsommateurACE() const;
 
+	/**
+	 * Le meme composant, sous son vrai type.
+	 *
+	 * Necessaire pour l'arreter : EndAudioSamples clot le flux mais laisse la
+	 * lecture se terminer, et il faut parfois couper net — un visiteur qui
+	 * s'en va au milieu d'une phrase.
+	 */
+	class UACEAudioCurveSourceComponent* TrouverComposantACE() const;
+
 	mutable int32 IndexPrecedent = -1;
 };

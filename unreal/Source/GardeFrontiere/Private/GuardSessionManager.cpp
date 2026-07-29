@@ -12,6 +12,7 @@
 
 #include "A2XSession.h"
 #include "A2FProvider.h"
+#include "ACEAudioCurveSourceComponent.h"
 #include "ACEBlueprintLibrary.h"
 #include "ACERuntimeModule.h"
 #include "AudioBridge.h"
@@ -371,6 +372,18 @@ void AGuardSessionManager::TerminerSession(EGuardFinDeSession Raison)
 	// effet rester affiche apres le depart du visiteur.
 	bRepliqueEnCours = false;
 	FermerSessionA2F();
+
+	// EndAudioSamples signale la fin du flux, il n'arrete PAS la lecture : le
+	// composant ACE continue de jouer ce qu'il a en tampon. Sans ce Stop, un
+	// visiteur qui s'en va au milieu d'une phrase laissait l'agent la finir
+	// dans une zone vide — Voix->Interrompre() ne coupait que le repli.
+	if (Avatars)
+	{
+		if (UACEAudioCurveSourceComponent* Source = Avatars->TrouverComposantACE())
+		{
+			Source->Stop();
+		}
+	}
 
 	if (Voix)    { Voix->Interrompre(); }
 	if (Tampons) { Tampons->Masquer(); }

@@ -138,4 +138,13 @@ private:
 	 * plutot qu'une constante.
 	 */
 	int32 TauxAudioAttendu = 22050;
+
+	/**
+	 * Message binaire en cours de reassemblage.
+	 *
+	 * OnRawMessage livre par fragments : on accumule jusqu'a ce que le
+	 * parametre `Restant` retombe a zero, sans quoi une frontiere sur un
+	 * octet impair decalerait tout le PCM qui suit.
+	 */
+	TArray<uint8> FragmentEnCours;
 };
