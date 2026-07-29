@@ -738,6 +738,13 @@ void AGuardSessionManager::AnnulerMinuteries()
 		FTimerManager& T = Monde->GetTimerManager();
 		T.ClearTimer(MinuterieAbandon);
 		T.ClearTimer(MinuterieSortie);
-		T.ClearTimer(MinuterieReconnexion);
+
+		// PAS MinuterieReconnexion : elle n'appartient pas a la session.
+		// L'effacer ici tuait la boucle de reconnexion pour de bon — la
+		// chaine panne -> reconnexion -> echec -> re-armement ne survit que
+		// par SurPanneIA, et une fin de session tombant dans la fenetre
+		// d'attente laissait la borne en mode degrade jusqu'au redemarrage,
+		// meme sidecar revenu. Elle est purgee dans EndPlay, par
+		// ClearAllTimersForObject.
 	}
 }

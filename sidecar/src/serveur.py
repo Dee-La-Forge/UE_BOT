@@ -45,6 +45,16 @@ class Serveur:
         # Un seul visiteur a la fois : la borne est mono-poste.
         self._occupe = asyncio.Lock()
 
+        # Une seule replique a la fois sur la socket. L'intro tourne en tache
+        # parallele : sans ce verrou, un visiteur qui parle pendant l'accueil
+        # (echo du haut-parleur capte par le VAD, ou vrai barge-in) faisait
+        # streamer DEUX repliques entrelacees — descripteurs JSON apparies
+        # aux mauvaises trames binaires cote Unreal, et historique mute en
+        # concurrence par deux _generer.
+        self._parole = asyncio.Lock()
+
+        self._tache_intro: asyncio.Task | None = None
+
     # -- Emission ---------------------------------------------------------
 
     @staticmethod
@@ -69,7 +79,9 @@ class Serveur:
         if not texte:
             return
         try:
-            parole = self.pipeline.tts.synthetiser(texte)
+            # to_thread : Piper est synchrone, et le laisser dans l'event
+            # loop rendrait le sidecar sourd pendant la synthese.
+            parole = await asyncio.to_thread(self.pipeline.tts.synthetiser, texte)
             await self._envoyer(ws, "parole.debut", texte=texte, emotion="Neutral")
             await self._envoyer_audio(
                 ws,
@@ -109,74 +121,83 @@ class Serveur:
         seq = 0
         a_parle = False
 
-        try:
-            async for element in self.pipeline.intro():
-                if isinstance(element, MorceauAudio):
-                    if not a_parle:
-                        await self._envoyer(ws, "parole.debut", texte=element.texte,
-                                            emotion=self._emotion_pressentie())
-                        a_parle = True
-                    await self._envoyer_audio(ws, element, seq)
-                    seq += 1
-                else:
-                    if a_parle:
-                        await self._envoyer(ws, "parole.fin")
-                    await self._conclure(ws, element)
+        # Sous le verrou de parole : un enonce du visiteur arrivant pendant
+        # l'accueil attendra la fin de l'intro au lieu de s'y entrelacer.
+        async with self._parole:
+            try:
+                async for element in self.pipeline.intro():
+                    if isinstance(element, MorceauAudio):
+                        if not a_parle:
+                            await self._envoyer(ws, "parole.debut", texte=element.texte,
+                                                emotion=self._emotion_pressentie())
+                            a_parle = True
+                        await self._envoyer_audio(ws, element, seq)
+                        seq += 1
+                    else:
+                        if a_parle:
+                            await self._envoyer(ws, "parole.fin")
+                        await self._conclure(ws, element)
 
-        except asyncio.CancelledError:
-            # Le visiteur est parti pendant l'accueil : on se tait, sans
-            # repli. Parler a une zone vide serait pire que le silence.
-            _log.info("intro interrompue — visiteur parti")
-            raise
+            except asyncio.CancelledError:
+                # Le visiteur est parti pendant l'accueil : on se tait, sans
+                # repli. Parler a une zone vide serait pire que le silence.
+                _log.info("intro interrompue — visiteur parti")
+                raise
 
-        except Exception:
-            _log.exception("echec de l'intro")
+            except Exception:
+                _log.exception("echec de l'intro")
 
-        if not a_parle:
-            _log.warning("intro muette — repli sur la replique d'accueil")
-            await self._replique_de_repli(ws, "accueil")
+            if not a_parle:
+                _log.warning("intro muette — repli sur la replique d'accueil")
+                await self._replique_de_repli(ws, "accueil")
 
     async def _traiter_audio(self, ws: ServerConnection, brut: bytes) -> None:
         audio = np.frombuffer(brut, dtype=np.int16).astype(np.float32) / 32768.0
         if audio.size == 0:
             return
 
-        # Verdict rendu : l'entretien est clos. Repondre encore ferait
-        # produire un nouveau verdict a chaque parole du visiteur, et la
-        # borne oscillerait entre Verdict et SortieZone aussi longtemps
-        # qu'il parlerait. Unreal pose deja ce garde ; on le double ici,
-        # parce qu'une borne sans surveillance ne se rattrape pas.
-        if self.pipeline.etat.terminee:
-            _log.info("parole ignoree : entretien deja clos")
-            return
+        # Sous le meme verrou que l'intro : deux repliques ne doivent jamais
+        # streamer en meme temps sur la meme socket.
+        async with self._parole:
+            # Verdict rendu : l'entretien est clos. Repondre encore ferait
+            # produire un nouveau verdict a chaque parole du visiteur, et la
+            # borne oscillerait entre Verdict et SortieZone aussi longtemps
+            # qu'il parlerait. Unreal pose deja ce garde ; on le double ici,
+            # parce qu'une borne sans surveillance ne se rattrape pas.
+            # (Teste sous le verrou : l'intro ou le tour precedent peut avoir
+            # change l'etat pendant qu'on attendait.)
+            if self.pipeline.etat.terminee:
+                _log.info("parole ignoree : entretien deja clos")
+                return
 
-        mesure = Mesure()
-        seq = 0
-        a_parle = False
+            mesure = Mesure()
+            seq = 0
+            a_parle = False
 
-        try:
-            async for element in self.pipeline.tour_de_parole(
-                audio, TAUX_VISITEUR, mesure
-            ):
-                if isinstance(element, MorceauAudio):
-                    if not a_parle:
-                        await self._envoyer(ws, "parole.debut", texte=element.texte,
-                                            emotion=self._emotion_pressentie())
-                        a_parle = True
-                    await self._envoyer_audio(ws, element, seq)
-                    seq += 1
-                else:
-                    if a_parle:
-                        await self._envoyer(ws, "parole.fin")
-                    await self._conclure(ws, element)
+            try:
+                async for element in self.pipeline.tour_de_parole(
+                    audio, TAUX_VISITEUR, mesure
+                ):
+                    if isinstance(element, MorceauAudio):
+                        if not a_parle:
+                            await self._envoyer(ws, "parole.debut", texte=element.texte,
+                                                emotion=self._emotion_pressentie())
+                            a_parle = True
+                        await self._envoyer_audio(ws, element, seq)
+                        seq += 1
+                    else:
+                        if a_parle:
+                            await self._envoyer(ws, "parole.fin")
+                        await self._conclure(ws, element)
 
-        except Exception:
-            _log.exception("echec du tour de parole")
-            await self._replique_de_repli(ws, "incompris")
-            return
+            except Exception:
+                _log.exception("echec du tour de parole")
+                await self._replique_de_repli(ws, "incompris")
+                return
 
         if self._mesures_actives and mesure.temps_premier_son is not None:
-            mesure.ecrire(self._journal, contexte={
+            # I/O disque hors de l'event loop, comme les inferences.
+            await asyncio.to_thread(mesure.ecrire, self._journal, contexte={
                 "modele_llm": self.config["llm"]["modele"],
                 "questions": self.pipeline.etat.nb_questions,
             })
@@ -218,6 +239,19 @@ class Serveur:
 
         except websockets.ConnectionClosed:
             _log.info("Unreal deconnecte")
+
+        finally:
+            # Unreal peut disparaitre SANS presence.perdue ni session.reset :
+            # crash, arret de PIE, cable debranche. Sans ce nettoyage, _occupe
+            # restait tenu pour toujours et chaque presence.detectee suivante
+            # etait ignoree — plus aucune session ne demarrait jusqu'au
+            # redemarrage manuel du sidecar. La borne est mono-poste : une
+            # connexion qui tombe emporte la session, quelle qu'elle soit.
+            self._annuler_intro()
+            self.pipeline.reinitialiser()
+            if self._occupe.locked():
+                self._occupe.release()
+            _log.info("connexion fermee — session liberee")
 
     async def _router(self, ws: ServerConnection, evenement: str) -> None:
         if evenement == "presence.detectee":

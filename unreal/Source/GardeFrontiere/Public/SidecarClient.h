@@ -130,6 +130,16 @@ private:
 	TSharedPtr<IWebSocket> Socket;
 
 	/**
+	 * Une tentative de connexion est partie et ne s'est pas encore resolue.
+	 *
+	 * IsConnected() est faux pendant tout le handshake : sans ce drapeau, la
+	 * minuterie de reconnexion remplacait un socket en cours de connexion,
+	 * dont les delegues restaient vivants — double connexion si l'ancien
+	 * aboutissait, acces a un objet detruit si une trame tardive arrivait.
+	 */
+	bool bConnexionEnCours = false;
+
+	/**
 	 * Taux d'echantillonnage annonce par le dernier descripteur `parole.audio`.
 	 *
 	 * Le JSON precede toujours la trame binaire qu'il decrit : on retient

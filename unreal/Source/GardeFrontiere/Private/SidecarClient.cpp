@@ -9,10 +9,35 @@
 
 void USidecarClient::Connecter(const FString& Url)
 {
-	if (Socket.IsValid() && Socket->IsConnected())
+	// Une tentative EN COURS compte comme occupee. La minuterie de
+	// reconnexion rappelle Connecter toutes les ~5 s, alors qu'un echec TCP
+	// peut prendre plus longtemps : remplacer le socket en plein handshake
+	// laissait l'ancien vivant dans le WebSocketsManager, delegues attaches
+	// — double connexion s'il aboutissait, acces a un objet detruit sinon.
+	// On laisse la tentative se resoudre : elle finira par SurConnexion ou
+	// SurErreur, qui relanceront la mecanique.
+	if (Socket.IsValid() && (Socket->IsConnected() || bConnexionEnCours))
 	{
 		return;
 	}
+
+	// Reliquat d'une tentative passee : on le detache proprement avant d'en
+	// creer un autre, sans quoi ses delegues resteraient lies a this.
+	if (Socket.IsValid())
+	{
+		Socket->OnConnected().Clear();
+		Socket->OnConnectionError().Clear();
+		Socket->OnClosed().Clear();
+		Socket->OnMessage().Clear();
+		Socket->OnRawMessage().Clear();
+		Socket.Reset();
+	}
+
+	// Un message binaire coupe en plein vol par la deconnexion precedente
+	// laisserait un demi-fragment : la premiere trame de la nouvelle
+	// connexion s'y concatenerait, et un reliquat impair decalerait tout le
+	// PCM16 d'un octet — du bruit a la place de la voix.
+	FragmentEnCours.Reset();
 
 	if (!FModuleManager::Get().IsModuleLoaded(TEXT("WebSockets")))
 	{
@@ -49,6 +74,7 @@ void USidecarClient::Connecter(const FString& Url)
 		});
 
 	UE_LOG(LogGardeFrontiere, Log, TEXT("Sidecar : connexion a %s"), *Url);
+	bConnexionEnCours = true;
 	Socket->Connect();
 }
 
@@ -70,7 +96,9 @@ void USidecarClient::Deconnecter()
 
 	UE_LOG(LogGardeFrontiere, Warning, TEXT("  Sidecar : delegues detaches"));
 
-	if (Socket->IsConnected())
+	// Close() aussi sur une tentative en cours : il l'annule, la ou ne rien
+	// faire laissait une connexion zombie aboutir cote serveur.
+	if (Socket->IsConnected() || bConnexionEnCours)
 	{
 		Socket->Close();
 		UE_LOG(LogGardeFrontiere, Warning, TEXT("  Sidecar : Close() rendu"));
@@ -80,6 +108,8 @@ void USidecarClient::Deconnecter()
 	// sidecar est un processus distinct, rien ne garantit qu'il reponde
 	// dans le delai d'un arret de PIE.
 	Socket.Reset();
+	bConnexionEnCours = false;
+	FragmentEnCours.Reset();
 	UE_LOG(LogGardeFrontiere, Warning, TEXT("  Sidecar : reference liberee"));
 }
 
@@ -205,17 +235,20 @@ void USidecarClient::TraiterBinaire(const TArray<uint8>& Donnees)
 
 void USidecarClient::SurConnexion()
 {
+	bConnexionEnCours = false;
 	UE_LOG(LogGardeFrontiere, Log, TEXT("Sidecar : connecte"));
 }
 
 void USidecarClient::SurErreur(const FString& Erreur)
 {
+	bConnexionEnCours = false;
 	UE_LOG(LogGardeFrontiere, Error, TEXT("Sidecar : echec de connexion — %s"), *Erreur);
 	OnPanne.Broadcast(Erreur);
 }
 
 void USidecarClient::SurFermeture(int32 Code, const FString& Raison, bool bParPair)
 {
+	bConnexionEnCours = false;
 	UE_LOG(LogGardeFrontiere, Warning,
 		TEXT("Sidecar : deconnecte (code %d, %s)"), Code, *Raison);
 	OnPanne.Broadcast(Raison.IsEmpty() ? TEXT("connexion fermee") : Raison);

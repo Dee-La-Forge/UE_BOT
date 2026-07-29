@@ -158,6 +158,15 @@ public:
 	UPROPERTY(BlueprintReadOnly, Category = "Capteur|Etat")
 	bool bCapteurFige = false;
 
+	/**
+	 * L'activation gouverne le port : Activate l'ouvre, Deactivate le ferme
+	 * — minuteries comprises. Necessaire parce que le SetActive() du
+	 * gestionnaire arrive APRES notre BeginPlay : sans ces surcharges, il ne
+	 * faisait que basculer un drapeau sans effet sur la liaison.
+	 */
+	virtual void Activate(bool bReset = false) override;
+	virtual void Deactivate() override;
+
 protected:
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type Raison) override;

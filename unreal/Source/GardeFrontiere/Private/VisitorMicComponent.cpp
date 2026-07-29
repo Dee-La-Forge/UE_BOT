@@ -103,12 +103,19 @@ void UVisitorMicComponent::OuvrirCapture()
 	}
 
 	bCaptureOuverte = true;
-	TauxCapture = Micro->GetSampleRate();
-	CanauxCapture = Micro->GetNumOfChannels();
+
+	// Le format n'est PAS connu ici. Le plugin construit son flux avec un
+	// taux nul et ne le renseigne qu'a l'arrivee du premier buffer capture :
+	// lire GetSampleRate() juste apres StartCapture rend 0. Figer ce 0
+	// faisait reechantillonner chaque drain d'un facteur 16000 — gel du
+	// thread de jeu puis saturation memoire des la premiere parole. Le
+	// format se releve au premier drain, dans TickComponent.
+	TauxCapture = 0;
+	CanauxCapture = 0;
 
 	UE_LOG(LogGardeFrontiere, Log,
-		TEXT("Micro : peripherique %d ouvert (%d Hz, %d canal/canaux)"),
-		PeripheriqueMicro, TauxCapture, CanauxCapture);
+		TEXT("Micro : peripherique %d ouvert — format connu au premier buffer"),
+		PeripheriqueMicro);
 }
 
 void UVisitorMicComponent::FermerCapture()
@@ -128,6 +135,8 @@ void UVisitorMicComponent::FermerCapture()
 	bCaptureOuverte = false;
 	bEcoute = false;
 	bParoleEnCours = false;
+	TauxCapture = 0;
+	CanauxCapture = 0;
 
 	FScopeLock Verrouillage(&Verrou);
 	Entrant.Reset();
@@ -267,10 +276,30 @@ void UVisitorMicComponent::TickComponent(
 		return;
 	}
 
+	// Premier drain : un buffer au moins a ete capte, le plugin connait donc
+	// enfin son format. C'est ICI qu'on le releve — a l'ouverture il valait
+	// encore 0, et reechantillonner sur un format invente diluait le signal.
+	if (TauxCapture <= 0 || CanauxCapture <= 0)
+	{
+		TauxCapture = Micro->GetSampleRate();
+		CanauxCapture = Micro->GetNumOfChannels();
+
+		if (TauxCapture <= 0 || CanauxCapture <= 0)
+		{
+			// Toujours inconnu : on jette ce drain plutot que de le traiter
+			// sur un format faux.
+			return;
+		}
+
+		UE_LOG(LogGardeFrontiere, Log,
+			TEXT("Micro : format de capture releve — %d Hz, %d canal/canaux"),
+			TauxCapture, CanauxCapture);
+	}
+
 	// Une seule conversion, vers le format que veulent le VAD ET Whisper.
-	const TArray<float> Mono = UAudioBridge::VersMono(Brut, FMath::Max(CanauxCapture, 1));
+	const TArray<float> Mono = UAudioBridge::VersMono(Brut, CanauxCapture);
 	const TArray<float> Reechantillonne =
-		UAudioBridge::Reechantillonner(Mono, FMath::Max(TauxCapture, 1), TauxCible);
+		UAudioBridge::Reechantillonner(Mono, TauxCapture, TauxCible);
 
 	Reliquat.Append(Reechantillonne);
 

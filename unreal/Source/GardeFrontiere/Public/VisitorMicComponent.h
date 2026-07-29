@@ -170,6 +170,14 @@ private:
 	 */
 	FCriticalSection Verrou;
 	TArray<float> Entrant;
+
+	/**
+	 * Format du peripherique, releve au PREMIER DRAIN — jamais a l'ouverture.
+	 *
+	 * GetSampleRate() rend 0 tant qu'aucun buffer n'a ete capte : le plugin
+	 * ne renseigne le format qu'a l'arrivee du premier buffer, apres
+	 * StartCapture. Zero vaut « pas encore connu ».
+	 */
 	int32 TauxCapture = 0;
 	int32 CanauxCapture = 0;
 

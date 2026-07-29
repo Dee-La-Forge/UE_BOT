@@ -10,6 +10,50 @@
 ULidarPresenceComponent::ULidarPresenceComponent()
 {
 	PrimaryComponentTick.bCanEverTick = false;
+
+	// Sans auto-activation, IsActive() est faux au BeginPlay — qui s'execute
+	// AVANT le SetActive() du gestionnaire, dispatche par Super::BeginPlay()
+	// de l'acteur. Le port ne s'ouvrait donc jamais, sauf a cocher la case a
+	// la main dans l'editeur.
+	bAutoActivate = true;
+}
+
+void ULidarPresenceComponent::Activate(bool bReset)
+{
+	Super::Activate(bReset);
+
+	// Reactivation apres coup (interrupteur de diagnostic rendu au
+	// gestionnaire, ou pilotage Blueprint) : on rouvre ce que Deactivate a
+	// ferme. Au demarrage, HasBegunPlay() est encore faux et c'est BeginPlay
+	// qui ouvrira.
+	if (HasBegunPlay() && !bPortOuvert)
+	{
+		TentativesEchouees = 0;
+		OuvrirPort();
+	}
+}
+
+void ULidarPresenceComponent::Deactivate()
+{
+	Super::Deactivate();
+
+	// L'interrupteur doit couper VRAIMENT : minuteries de lecture et de
+	// reconnexion comprises. Avant, un SetActive(false) arrivant apres le
+	// BeginPlay laissait le port ouvert et la lecture tourner — le
+	// sous-systeme cense etre isolable ne l'etait pas.
+	if (UWorld* Monde = GetWorld())
+	{
+		Monde->GetTimerManager().ClearAllTimersForObject(this);
+	}
+	FermerPort();
+
+	// Un capteur qu'on coupe ne doit pas laisser un visiteur bloque en
+	// session — meme contrat qu'une liaison perdue.
+	if (bPresent)
+	{
+		bPresent = false;
+		OnPresencePerdue.Broadcast();
+	}
 }
 
 void ULidarPresenceComponent::BeginPlay()
@@ -75,8 +119,9 @@ void ULidarPresenceComponent::OuvrirPort()
 
 	// Ne rien tenter pendant la destruction : l'ouverture d'un port serie
 	// est un appel systeme bloquant, et le declencher au moment ou le
-	// monde disparait fige le thread de jeu.
-	if (!Monde || IsBeingDestroyed() || !IsValid(this))
+	// monde disparait fige le thread de jeu. Ni desactive : une minuterie
+	// de reconnexion qui survivrait a Deactivate ne doit pas rouvrir.
+	if (!Monde || IsBeingDestroyed() || !IsValid(this) || !IsActive())
 	{
 		return;
 	}

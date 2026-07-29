@@ -15,6 +15,7 @@ modele : ils sont imposes par bascule de grammaire GBNF.
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -190,7 +191,13 @@ class Pipeline:
         m.marquer("debut")
 
         # --- 1. Transcription -------------------------------------------
-        texte_visiteur = self.stt.transcrire(audio_visiteur, taux)
+        # to_thread : faster-whisper est synchrone et prend de quelques
+        # centaines de ms a plusieurs secondes. L'appeler directement gelait
+        # TOUT l'event loop — ping/pong websockets compris, et surtout le
+        # presence.perdue d'un visiteur qui part pendant la transcription.
+        texte_visiteur = await asyncio.to_thread(
+            self.stt.transcrire, audio_visiteur, taux
+        )
         m.marquer("stt_fin")
 
         # Journalise, parce que sans cela on ne peut pas distinguer un LLM qui
@@ -266,7 +273,10 @@ class Pipeline:
             if not prononcable:
                 continue
 
-            parole = self.tts.synthetiser(prononcable)
+            # Meme regle que pour le STT : Piper est synchrone, on le sort
+            # de l'event loop pour que le sidecar reste joignable pendant
+            # qu'il parle.
+            parole = await asyncio.to_thread(self.tts.synthetiser, prononcable)
 
             if premier:
                 m.marquer("tts_premier_chunk")
