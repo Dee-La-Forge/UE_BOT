@@ -369,6 +369,7 @@ void AGuardSessionManager::TerminerSession(EGuardFinDeSession Raison)
 
 	// On ne laisse ni l'agent parler dans le vide, ni un tampon ou un
 	// effet rester affiche apres le depart du visiteur.
+	bRepliqueEnCours = false;
 	FermerSessionA2F();
 
 	if (Voix)    { Voix->Interrompre(); }
@@ -460,6 +461,14 @@ bool AGuardSessionManager::OuvrirSessionA2F(int32 Taux)
 	if (SessionA2F.IsValid() && TauxSessionA2F == Taux)
 	{
 		return true;
+	}
+
+	// Hors replique, aucune ouverture. Une trame arrivant apres parole.fin
+	// est un reliquat de la replique qui vient de se clore : lui ouvrir une
+	// session la ferait jouer par-dessus celle qui s'entend encore.
+	if (!bRepliqueEnCours)
+	{
+		return false;
 	}
 
 	IACEAnimDataConsumer* Consommateur = Avatars ? Avatars->TrouverConsommateurACE() : nullptr;
@@ -576,11 +585,12 @@ void AGuardSessionManager::SurParoleDebut(const FString& Texte, EGuardEmotion Em
 {
 	bIADisponible = true;
 
-	// Nouvelle replique : on clot le flux precedent avant d'en ouvrir un
-	// autre. EndAudioSamples ne coupe pas la lecture — la queue de la phrase
-	// precedente finit de s'entendre — mais il garantit qu'une seule session
-	// recoit des trames a la fois.
+	// Nouvelle replique : on clot le flux precedent s'il en restait un, puis
+	// on autorise l'ouverture d'un nouveau. Hors de cette fenetre, aucune
+	// trame ne peut ouvrir de session — c'est ce qui empeche une trame en
+	// retard d'en creer une seconde pendant que la premiere joue encore.
 	FermerSessionA2F();
+	bRepliqueEnCours = true;
 
 	// La phase ne bascule PLUS ici. La premiere replique de l'agent est son
 	// accueil : cote sidecar c'est la phase INTRO, qui ne compte pas comme
@@ -604,16 +614,16 @@ void AGuardSessionManager::SurParoleDebut(const FString& Texte, EGuardEmotion Em
 
 void AGuardSessionManager::SurParoleFin()
 {
-	// La session A2F n'est PAS fermee ici. Elle l'etait, et une trame arrivant
-	// juste apres ouvrait une seconde session pendant que la premiere jouait
-	// encore — deux voix superposees :
+	// La replique est finie : on ferme, et il FAUT fermer ici.
 	//
-	//   [ACE SID 1] End of samples
-	//   [ACE SID 2] Started session          <- meme milliseconde
-	//
-	// Elle se ferme desormais au debut de la replique SUIVANTE, et a la fin
-	// de la session. Une trame en retard rejoint ainsi le flux auquel elle
-	// appartient, au lieu d'en ouvrir un concurrent.
+	// EndAudioSamples est ce qui vide la file. A2XSession retient les
+	// derniers echantillons tant qu'ils n'atteignent pas son minimum, et ne
+	// les envoie qu'a la fermeture. Differer celle-ci laissait la fin de
+	// chaque phrase coincee — voix coupee, animation figee sur sa derniere
+	// trame recue.
+	bRepliqueEnCours = false;
+	FermerSessionA2F();
+
 	ArmerAbandon();
 }
 

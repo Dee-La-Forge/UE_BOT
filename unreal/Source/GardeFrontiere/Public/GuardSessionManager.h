@@ -352,6 +352,16 @@ private:
 	/** Taux de la session ouverte, pour la rouvrir si le sidecar en changeait. */
 	int32 TauxSessionA2F = 0;
 
+	/**
+	 * Vrai entre parole.debut et parole.fin.
+	 *
+	 * Seule cette fenetre autorise l'ouverture d'une session A2F. Une trame
+	 * arrivant en dehors est un reliquat de la replique qui vient de se
+	 * clore : lui ouvrir une session la ferait jouer par-dessus celle qui
+	 * s'entend encore, et le visiteur entendrait deux voix.
+	 */
+	bool bRepliqueEnCours = false;
+
 	// Reactions au capteur de presence
 	UFUNCTION() void SurPresenceDetectee();
 	UFUNCTION() void SurPresencePerdue();
