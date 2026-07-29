@@ -2,6 +2,7 @@
 
 #include "GardeFrontiere.h"
 #include "Algo/Find.h"
+#include "UObject/ConstructorHelpers.h"
 #include "Components/ActorComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Engine/World.h"
@@ -11,6 +12,30 @@
 UAvatarSwitcherComponent::UAvatarSwitcherComponent()
 {
 	PrimaryComponentTick.bCanEverTick = false;
+
+	// Les trois agents, cables par defaut.
+	//
+	// Une reference en dur du C++ vers du contenu se justifie ici : sans les
+	// trois, toute la mecanique tourne a vide — le glitch masque une
+	// substitution qui remplace Germain par Germain, et le visiteur revoit le
+	// meme visage. C'est arrive pendant des jours, faute d'un tableau rempli.
+	//
+	// Une entree introuvable est simplement ignoree : le projet doit compiler
+	// et demarrer meme si un avatar n'a pas ete importe.
+	static const TCHAR* Chemins[] = {
+		TEXT("/Game/MetaHumans/AgentGermain/BP_AgentGermain.BP_AgentGermain_C"),
+		TEXT("/Game/MetaHumans/AgentLouise/BP_AgentLouise.BP_AgentLouise_C"),
+		TEXT("/Game/MetaHumans/AgentTrinity/BP_AgentTrinity.BP_AgentTrinity_C"),
+	};
+
+	for (const TCHAR* Chemin : Chemins)
+	{
+		ConstructorHelpers::FClassFinder<AActor> Trouve(Chemin);
+		if (Trouve.Succeeded())
+		{
+			ClassesAvatars.Add(Trouve.Class);
+		}
+	}
 }
 
 void UAvatarSwitcherComponent::EndPlay(const EEndPlayReason::Type Raison)

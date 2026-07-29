@@ -219,3 +219,73 @@ chemin le plus court vers « l'agent parle avec l'IA locale », qui reste la
 priorite.
 
 **A reprendre une fois la boucle complete validee.**
+
+---
+
+# Verdict du 29/07/2026 : l'option B n'a jamais fonctionne
+
+La recommandation ci-dessus reposait sur une hypothese jamais verifiee de
+bout en bout. Elle etait fausse.
+
+## Ce qui avait ete verifie, et ce qui ne l'avait pas ete
+
+| Affirmation du document | Statut reel |
+|---|---|
+| Piper expose les phonemes et leurs durees | **vrai** |
+| Frise a 0 ms de derive sur la duree de l'audio | **vrai** |
+| « Mapping vers les 25 poses MHF_* — deja presentes » | **FAUX** |
+
+Les poses `MHF_*` existent peut-etre comme assets dans le plugin, mais
+**`Convai_MetaHuman_FaceAnim` n'expose aucune variable flottante portant ces
+noms**. Cet AnimBP pilote des courbes `CTRL_expressions_*` — les controles
+du rig facial MetaHuman — et embarque son PROPRE systeme de visemes
+(`ConvaiLipsyncViseme_Anim`, `BlendshapeMap_Ref_Visemes`), alimente par le
+`ConvaiChatbotComponent`.
+
+Or ce composant a ete retire des avatars le 28/07 pour supprimer le gel de
+l'editeur a l'arret. Le lipsync natif de Convai est donc parti avec lui, et
+le notre ecrivait dans le vide depuis le debut.
+
+## Comment le defaut a survecu si longtemps
+
+`UAgentFaceComponent::EcrireFlottant` cherche la propriete par reflexion et
+rend `false` si elle n'existe pas. **Personne ne lisait ce retour.** La
+chaine complete — sidecar, transport, planification, fondu, recouvrement —
+s'executait correctement et n'aboutissait a rien, sans une ligne de journal.
+
+Un avertissement ajoute le 28/07 a livre le diagnostic en une execution :
+
+```
+Visage : 'MHF_PBM' absent de Convai_MetaHuman_FaceAnim_C
+Visage : 'MHF_AA'  absent de Convai_MetaHuman_FaceAnim_C
+```
+
+**Lecon transposable :** une fonction qui peut echouer en silence doit le
+dire. Le meme angle mort avait deja coute un apres-midi sur la liaison
+serie du LiDAR — le port s'ouvrait, aucune trame n'etait exploitable, et
+rien ne le signalait.
+
+## Ce qui a ete fait
+
+Le chemin visemes est **supprime** — environ 250 lignes cote Unreal, plus
+la serialisation cote sidecar. Le reparer aurait suppose une table
+`MHF_* -> CTRL_expressions_*` calee a la main, jetee des l'arrivee
+d'Audio2Face, qui produit des blendshapes ARKit consommees nativement par
+le MetaHuman.
+
+Du code qui parait faire quelque chose est pire que pas de code.
+
+`UAgentFaceComponent` redevient l'emotion et rien d'autre. Il ne tique plus.
+
+## Ou en est le chantier
+
+L'option C — Audio2Face — n'est plus une piste parmi d'autres : c'est la
+seule restante. A et B sont mortes, pour des raisons independantes.
+
+Le socle est en place : `LiveLink`, `LiveLinkControlRig` et
+`AppleARKitFaceSupport` sont deja actifs dans le `.uproject`.
+
+Et la priorite invoquee pour differer — « la boucle complete l'agent parle
+avec l'IA locale » — est atteinte depuis le 29/07 : LiDAR, accueil, micro,
+VAD, STT, LLM, TTS, verdict. La borne tient une conversation entiere. Le
+lipsync est desormais ce qui manque, et plus ce qui attend.

@@ -91,3 +91,8 @@ desktop.ini
 
 # Echantillons de test : regeneres par bench/generer_echantillons.py
 sidecar/bench/echantillons/
+
+# Plugins NVIDIA ACE — 4 Go de bibliotheques natives et de modeles.
+# Retelechargeables depuis developer.nvidia.com, compte connecte requis.
+unreal/Plugins/NV_ACE_Reference/
+unreal/Plugins/NvAudio2FaceJames/
