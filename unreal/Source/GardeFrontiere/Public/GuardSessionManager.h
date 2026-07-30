@@ -648,6 +648,9 @@ private:
 	/** Dernier « Repetez. » du mode degrade, pour ne pas le marteler. */
 	double InstantDernierRepetez = -1.0e9;
 
+	/** Un rejet de trame audio a deja ete signale pour la replique en cours. */
+	bool bRejetTrameSignale = false;
+
 	/** Distincte des cles du capteur, pour que les deux messages coexistent. */
 	static constexpr uint64 CleAffichagePhase = 8810;
 };

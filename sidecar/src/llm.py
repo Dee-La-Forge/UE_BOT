@@ -95,13 +95,21 @@ class ClientLLM:
                 + ", ".join(manquantes)
             )
 
-        # Le delai par defaut porte sur CHAQUE lecture, pas sur le total :
-        # un llama.cpp sain streame un chunk toutes les quelques dizaines de
-        # ms, et n_predict borne le total. 60 s laissaient donc un serveur
-        # fige tenir le verrou de parole une minute entiere avant la panne
-        # franche ; 20 s suffisent tres largement a distinguer « il
-        # reflechit » de « il est mort ».
-        self._client = httpx.AsyncClient(timeout=httpx.Timeout(20.0, connect=5.0))
+        # Le delai porte sur CHAQUE lecture, pas sur le total. Une fois le
+        # flux parti, un llama.cpp sain envoie un morceau toutes les
+        # quelques dizaines de ms — mais AVANT le premier, il evalue le
+        # prompt, et n'emet rien pendant ce temps.
+        #
+        # 20 s (essaye le 30/07/2026) coupait cette evaluation a froid sur
+        # un GPU modeste : la premiere replique de chaque session mourait
+        # en httpx.ReadTimeout, et l'agent tombait sur son repli d'accueil.
+        # Le meme defaut existe cote Unreal, corrige par
+        # DelaiPremiereReponse — les deux delais doivent rester coherents.
+        #
+        # 45 s : large pour un prompt froid, et toujours tres inferieur au
+        # temps qu'une borne peut se permettre de rester muette.
+        delai = float(config.get("delai_lecture", 45.0))
+        self._client = httpx.AsyncClient(timeout=httpx.Timeout(delai, connect=5.0))
 
     async def disponible(self) -> bool:
         """Verifie que llama.cpp server repond, avant de lancer une session."""

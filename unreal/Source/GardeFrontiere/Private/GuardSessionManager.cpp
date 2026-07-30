@@ -90,8 +90,24 @@ void AGuardSessionManager::BeginPlay()
 			// jouait la trame sans condition.
 			if (!bRepliqueEnCours || Phase == EGuardPhase::Veille)
 			{
+				// Ce rejet est SILENCIEUX par nature — et c'est
+				// exactement ce qui rend « l'agent ne parle pas »
+				// indiagnosticable : rien ne distingue une trame jetee
+				// ici d'une trame jamais arrivee. On le dit, une fois
+				// par replique refusee.
+				if (!bRejetTrameSignale)
+				{
+					bRejetTrameSignale = true;
+					UE_LOG(LogGardeFrontiere, Warning,
+						TEXT("Audio rejete : %d octets recus hors replique ")
+						TEXT("(bRepliqueEnCours=%d, phase=%s). Un parole.debut ")
+						TEXT("a-t-il ete recu avant ?"),
+						PCM16.Num(), bRepliqueEnCours ? 1 : 0,
+						*StaticEnum<EGuardPhase>()->GetDisplayNameTextByValue((int64)Phase).ToString());
+				}
 				return;
 			}
+			bRejetTrameSignale = false;
 
 			// Audio2Face d'abord : son composant JOUE le son en plus d'animer
 			// le visage. Empiler la meme trame dans Voix ferait parler l'agent
@@ -980,6 +996,11 @@ void AGuardSessionManager::SurParoleDebut(const FString& Texte, EGuardEmotion Em
 
 	// Le sidecar repond : une future panne meritera une nouvelle annonce.
 	bPanneAnnoncee = false;
+
+	// Trace de bout en bout : c'est le premier signe, cote Unreal, qu'une
+	// replique arrive. Sans elle, « l'agent reste muet » ne disait pas si
+	// le sidecar avait parle ou si Unreal n'avait rien recu.
+	UE_LOG(LogGardeFrontiere, Log, TEXT("Replique recue : « %s »"), *Texte);
 
 	// Le sidecar vient de repondre : la surveillance a rempli son office.
 	AnnulerSurveillanceIA();

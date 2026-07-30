@@ -164,4 +164,18 @@ private:
 	 * octet impair decalerait tout le PCM qui suit.
 	 */
 	TArray<uint8> FragmentEnCours;
+
+	/**
+	 * Un descripteur `parole.audio` a ete recu : la prochaine trame est de
+	 * l'audio, et elle seule.
+	 *
+	 * L'implementation WebSocket d'Unreal presente AUSSI les messages
+	 * TEXTE a OnRawMessage. Sans ce drapeau, chaque JSON du contrat
+	 * repartait dans le chemin audio — releve le 30/07/2026 : les
+	 * 62 octets de {"evenement": "session.demarree", ...} y sont arrives
+	 * une milliseconde apres avoir ete lus comme JSON. En pleine replique,
+	 * le descripteur se serait injecte dans le PCM entre deux morceaux de
+	 * voix.
+	 */
+	bool bTrameAudioAttendue = false;
 };

@@ -69,7 +69,23 @@ void USidecarClient::Connecter(const FString& Url)
 				return;   // le message n'est pas fini
 			}
 
-			TraiterBinaire(FragmentEnCours);
+			// L'implementation WebSocket d'Unreal presente AUSSI les
+			// messages TEXTE a OnRawMessage. Sans ce garde, chaque JSON du
+			// contrat repartait en audio : releve le 30/07/2026, les
+			// 62 octets de {"evenement": "session.demarree", ...} arrivaient
+			// dans le chemin audio une milliseconde apres avoir ete traites
+			// comme JSON. Pendant une replique, le descripteur parole.audio
+			// se serait injecte dans le PCM, entre deux morceaux de voix.
+			//
+			// Le contrat dit qu'une trame binaire est TOUJOURS annoncee par
+			// son descripteur : on ne consomme donc que ce qui a ete
+			// annonce. Tout le reste est du JSON qui a pris la mauvaise
+			// porte, et que TraiterMessage a deja lu.
+			if (bTrameAudioAttendue)
+			{
+				bTrameAudioAttendue = false;
+				TraiterBinaire(FragmentEnCours);
+			}
 			FragmentEnCours.Reset();
 		});
 
@@ -185,11 +201,14 @@ void USidecarClient::TraiterMessage(const FString& Message)
 	}
 	else if (Evenement == TEXT("parole.audio"))
 	{
-		// Ce descripteur precede la trame binaire : on retient son taux.
+		// Ce descripteur precede la trame binaire : on retient son taux, et
+		// on ARME la reception — c'est lui, et lui seul, qui autorise la
+		// prochaine trame a partir dans le chemin audio.
 		if (Json->HasTypedField<EJson::Number>(TEXT("taux")))
 		{
 			TauxAudioAttendu = Json->GetIntegerField(TEXT("taux"));
 		}
+		bTrameAudioAttendue = true;
 	}
 	else if (Evenement == TEXT("parole.fin"))
 	{

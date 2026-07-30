@@ -100,7 +100,9 @@ class Serveur:
             ws, "parole.audio",
             seq=seq, taux=m.taux, texte=m.texte, premier=m.premier,
         )
-        await ws.send(self.pipeline.tts.en_pcm16(m.pcm))
+        trame = self.pipeline.tts.en_pcm16(m.pcm)
+        await ws.send(trame)
+        _log.debug("trame %d envoyee : %d octets a %d Hz", seq, len(trame), m.taux)
 
     async def _dire(self, ws: ServerConnection, texte: str,
                     emotion: str = "Neutral") -> None:
@@ -121,6 +123,12 @@ class Serveur:
             asyncio.to_thread(self.pipeline.tts.synthetiser, texte),
             timeout=DELAI_TTS,
         )
+        # Journalise CE QUI PART REELLEMENT sur la socket. Sans cette
+        # ligne, une replique de repli synthetisee et envoyee etait
+        # indiscernable d'une replique jamais prononcee — et « l'agent
+        # reste muet » ne disait pas ou la chaine se rompait.
+        _log.info("agent (hors LLM) : %s  [%d ech. a %d Hz]",
+                  texte, parole.pcm.size, parole.taux)
         # L'envoi du parole.debut vit DANS le try : une annulation frappant
         # cet await peut arriver alors que la trame est deja partie sur le
         # transport — Unreal a le debut, nous avons l'exception. Le laisser

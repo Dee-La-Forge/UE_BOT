@@ -71,6 +71,11 @@ llm:
   # l'empecher de reutiliser le vocabulaire du poste frontiere.
   penalite_repetition: 1.15
   fenetre_repetition: 256
+  # Attente maximale ENTRE DEUX morceaux du flux. Avant le premier, le
+  # modele evalue le prompt sans rien emettre : a froid, sur un GPU
+  # modeste, cela depasse largement 20 s. A garder coherent avec
+  # DelaiPremiereReponse cote Unreal (30 s).
+  delai_lecture: 45.0
   # Contraignent le format de sortie : texte parle, puis tags emotion/verdict.
   # La bascule entre les trois est pilotee par le nombre de questions posees
   # (voir pipeline.py) — le plancher et le plafond du Narrative Design
