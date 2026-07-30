@@ -83,6 +83,14 @@ void UAgentFaceComponent::AppliquerEmotion(EGuardEmotion Emotion)
 
 void UAgentFaceComponent::AppliquerMelange(const FMelangeEmotion& M)
 {
+	// ATTENTION : ces sept variables sont celles de
+	// Convai_MetaHuman_FaceAnim. Face_AnimBP — l'AnimBP de NVIDIA que
+	// PreparerAudio2Face impose au spawn — n'en connait AUCUNE : depuis le
+	// montage Audio2Face, ces ecritures partent donc toutes dans le vide,
+	// et le visage garde une expression fixe. Voir
+	// docs/EMOTIONS-VS-LIPSYNC.md : la decision (ajouter les variables a
+	// Face_AnimBP, ou laisser ACE piloter l'expression) n'est pas prise.
+	//
 	// "Suprise" est orthographie ainsi dans l'AnimBP — sans le second r.
 	// Corriger la faute ici ferait echouer l'ecriture, en silence.
 	const TPair<FName, float> Poids[] = {
@@ -117,7 +125,8 @@ void UAgentFaceComponent::AppliquerMelange(const FMelangeEmotion& M)
 		bAvertissementEmis = true;
 		UE_LOG(LogGardeFrontiere, Warning,
 			TEXT("Visage : aucune propriete d'emotion trouvee sur l'AnimInstance. ")
-			TEXT("Le maillage cible utilise-t-il bien Convai_MetaHuman_FaceAnim ?"));
+			TEXT("Attendu avec Face_AnimBP (NVIDIA), qui n'expose pas les ")
+			TEXT("variables de Convai — voir docs/EMOTIONS-VS-LIPSYNC.md."));
 	}
 }
 

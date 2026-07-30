@@ -82,7 +82,11 @@ captee par le micro repartait au sidecar comme parole du visiteur.
 
 ## Reste a faire
 
-- [ ] **Supprimer le noeud `Set VADProvider` de `BP_FirstPersonCharacter`** :
+- [ ] **Trancher : emotions ou lipsync ?** Les deux se disputent l'unique
+      AnimBP facial, et les emotions sont muettes depuis le montage
+      Audio2Face de juillet — decision et options dans
+      `docs/EMOTIONS-VS-LIPSYNC.md`
+- [x] ~~Supprimer le noeud `Set VADProvider` de `BP_FirstPersonCharacter`~~ :
       ancien cablage, il empeche le Blueprint de compiler (5 erreurs) pour
       une fonction que `UVisitorMicComponent` assure deja en C++ — voir
       `patches/RuntimeAudioImporter-VAD.md`
