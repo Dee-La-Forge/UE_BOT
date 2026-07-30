@@ -514,6 +514,26 @@ private:
 	void LancerSubstitution();
 
 	/**
+	 * Traduit l'emotion decidee par le LLM en surcharge Audio2Face.
+	 *
+	 * A2F sait recevoir une emotion IMPOSEE par l'application
+	 * (FAudio2FaceEmotion::EmotionOverrides) : il l'applique au visage en
+	 * meme temps qu'il calcule le lipsync, dans le meme AnimBP. C'est ce
+	 * qui rend l'expression au personnage sans toucher a un Blueprint —
+	 * les sept variables de Convai n'existent pas dans Face_AnimBP, et
+	 * n'ont plus a exister.
+	 *
+	 * On n'utilise PAS Audio2Emotion, qui deduit l'emotion de l'audio :
+	 * Piper produit une voix plate, il detecterait « neutre » a chaque
+	 * replique et la decision narrative du LLM serait perdue.
+	 *
+	 * Rend un TOptional vide pour Neutral : laisser A2F au repos plutot
+	 * que de lui imposer une neutralite, qui aplatirait aussi le jeu
+	 * naturel du visage pendant la parole.
+	 */
+	TOptional<struct FAudio2FaceEmotion> EmotionPourA2F() const;
+
+	/**
 	 * L'agent est-il audible en ce moment ?
 	 *
 	 * bRepliqueEnCours ne couvre que le FLUX (parole.debut -> parole.fin) :

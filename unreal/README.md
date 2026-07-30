@@ -82,9 +82,10 @@ captee par le micro repartait au sidecar comme parole du visiteur.
 
 ## Reste a faire
 
-- [ ] **Trancher : emotions ou lipsync ?** Les deux se disputent l'unique
-      AnimBP facial, et les emotions sont muettes depuis le montage
-      Audio2Face de juillet — decision et options dans
+- [x] ~~Trancher : emotions ou lipsync ?~~ **Les deux** : l'emotion du LLM
+      voyage avec l'audio vers Audio2Face, qui l'applique en meme temps
+      que le lipsync (`EmotionPourA2F`). Reste a **regler les quatre
+      correspondances a l'oeil, sur la borne** — voir
       `docs/EMOTIONS-VS-LIPSYNC.md`
 - [x] ~~Supprimer le noeud `Set VADProvider` de `BP_FirstPersonCharacter`~~ :
       ancien cablage, il empeche le Blueprint de compiler (5 erreurs) pour

@@ -1,7 +1,42 @@
 # Les emotions et le lipsync se disputent le meme AnimBP
 
-**Constat du 30/07/2026, a trancher.** Le maillage facial n'a qu'UN
-AnimBP, et les deux systemes qui veulent l'animer n'habitent pas le meme.
+> ## RESOLU le 30/07/2026 — par une quatrieme voie
+>
+> Les trois options ci-dessous supposaient toutes qu'il fallait choisir
+> entre l'AnimBP de Convai et celui de NVIDIA. C'etait une fausse
+> alternative : **Audio2Face accepte une emotion imposee par
+> l'application**, et l'applique au visage en meme temps qu'il calcule
+> le lipsync.
+>
+> ```cpp
+> SendAudioSamples(Echantillons, false, EmotionPourA2F(), nullptr);
+> //                                    ^ TOptional<FAudio2FaceEmotion>
+> ```
+>
+> Ce parametre etait passe a `NullOpt` depuis le montage de juillet :
+> voila pourquoi l'agent parlait sans expression. `FAudio2FaceEmotion`
+> porte `bEnableEmotionOverride` (vrai par defaut) et dix emotions
+> surchargeables — Amazement, Anger, Cheekiness, Disgust, Fear, Grief,
+> Joy, OutOfBreath, Pain, Sadness.
+>
+> `AGuardSessionManager::EmotionPourA2F` traduit desormais l'emotion
+> decidee par le LLM vers ces surcharges. **Aucun Blueprint a editer, le
+> LLM garde la main sur l'expression, et le lipsync est intact.**
+>
+> Et **Audio2Emotion est volontairement ecarte** : il DEDUIT l'emotion de
+> l'audio, or Piper produit une voix plate — il detecterait « neutre » a
+> chaque replique et la decision narrative serait perdue.
+>
+> Reste a valider sur la borne : le rendu des quatre correspondances
+> (Stare / Concerned / Angry / Happy) ne peut pas se voir sans RTX.
+> Les valeurs sont dans `EmotionPourA2F`, faciles a regler a l'oeil.
+
+Le constat d'origine, conserve pour la trace :
+
+---
+
+Le maillage facial n'a qu'UN AnimBP, et les deux systemes qui veulent
+l'animer n'habitent pas le meme.
 
 ## Le fait
 

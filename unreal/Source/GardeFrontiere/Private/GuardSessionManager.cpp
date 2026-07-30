@@ -12,6 +12,7 @@
 
 #include "A2XSession.h"
 #include "A2FProvider.h"
+#include "ACETypes.h"   // FAudio2FaceEmotion — l'emotion imposee a A2F
 #include "ACEAudioCurveSourceComponent.h"
 #include "ACEBlueprintLibrary.h"
 #include "ACERuntimeModule.h"
@@ -82,7 +83,13 @@ void AGuardSessionManager::BeginPlay()
 				const TArrayView<const int16> Echantillons(
 					reinterpret_cast<const int16*>(PCM16.GetData()), PCM16.Num() / 2);
 
-				SessionA2F->SendAudioSamples(Echantillons, false, NullOpt, nullptr);
+				// L'emotion decidee par le LLM voyage AVEC l'audio : A2F
+				// l'applique au visage en meme temps qu'il calcule le
+				// lipsync. Ce troisieme parametre est reste vide jusqu'au
+				// 30/07/2026, et l'agent parlait donc sans expression —
+				// voir docs/EMOTIONS-VS-LIPSYNC.md.
+				SessionA2F->SendAudioSamples(
+					Echantillons, false, EmotionPourA2F(), nullptr);
 
 				// Entretien de la fin de lecture ESTIMEE (voir le membre) :
 				// ancre au premier envoi de la replique, puis cumul des
@@ -636,6 +643,58 @@ void AGuardSessionManager::TerminerSession(EGuardFinDeSession Raison)
 				FMath::Max(DelaiReprisePresence, 1.f), false);
 		}
 	}
+}
+
+TOptional<FAudio2FaceEmotion> AGuardSessionManager::EmotionPourA2F() const
+{
+	const EGuardEmotion Emotion = Visage ? Visage->EmotionCourante : EGuardEmotion::Neutral;
+
+	// Neutral : rien d'impose. A2F garde son jeu de visage naturel.
+	if (Emotion == EGuardEmotion::Neutral)
+	{
+		return NullOpt;
+	}
+
+	FAudio2FaceEmotion Parametres;
+	FAudio2FaceEmotionOverride& O = Parametres.EmotionOverrides;
+
+	switch (Emotion)
+	{
+	case EGuardEmotion::Angry:
+		O.bOverrideAnger = true;
+		O.Anger = 0.75f;
+		break;
+
+	case EGuardEmotion::Concerned:
+		// Le doute d'un garde-frontiere, pas la peur : Fear en retrait,
+		// une pointe de Disgust pour le pli dedaigneux du visage.
+		O.bOverrideFear = true;
+		O.Fear = 0.35f;
+		O.bOverrideDisgust = true;
+		O.Disgust = 0.25f;
+		break;
+
+	case EGuardEmotion::Happy:
+		// Un garde-frontiere ne se rejouit pas : il approuve. Joy modere,
+		// releve de Cheekiness — la satisfaction un peu narquoise de
+		// celui qui laisse passer.
+		O.bOverrideJoy = true;
+		O.Joy = 0.5f;
+		O.bOverrideCheekiness = true;
+		O.Cheekiness = 0.3f;
+		break;
+
+	case EGuardEmotion::Stare:
+	default:
+		// L'etat par defaut de la persona : froid, jaugeant. Aucune des
+		// dix emotions de A2F ne le nomme, et c'est normal — c'est une
+		// ABSENCE d'expression, tenue. On l'obtient en bridant la force
+		// globale plutot qu'en imposant un sentiment qu'il n'a pas.
+		Parametres.OverallEmotionStrength = 0.15f;
+		break;
+	}
+
+	return Parametres;
 }
 
 void AGuardSessionManager::LancerSubstitution()
