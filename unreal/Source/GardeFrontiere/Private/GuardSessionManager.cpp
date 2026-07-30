@@ -84,6 +84,20 @@ void AGuardSessionManager::BeginPlay()
 
 				SessionA2F->SendAudioSamples(Echantillons, false, NullOpt, nullptr);
 
+				// Entretien de la fin de lecture ESTIMEE (voir le membre) :
+				// ancre au premier envoi de la replique, puis cumul des
+				// durees. C'est la seule vue qu'on ait sur la lecture ACE.
+				if (UWorld* Monde = GetWorld())
+				{
+					const double Maintenant = Monde->GetTimeSeconds();
+					if (FinLectureAcePresumee < Maintenant)
+					{
+						FinLectureAcePresumee = Maintenant + GraceSuiviLecture;
+					}
+					FinLectureAcePresumee +=
+						(PCM16.Num() / 2.0) / FMath::Max(Taux, 1);
+				}
+
 				// Le composant ACE est cense jouer le son qu'il renvoie. Tant
 				// qu'il reste muet, on double par Voix pour entendre la
 				// replique et voir si le visage s'anime malgre tout.
@@ -479,6 +493,10 @@ void AGuardSessionManager::CouperLecture()
 	bRepliqueEnCours = false;
 	FermerSessionA2F();
 
+	// La lecture est coupee : l'estimation de fin ne vaut plus rien, et la
+	// laisser courir garderait le micro sourd sur du silence.
+	FinLectureAcePresumee = -1.0e9;
+
 	// EndAudioSamples signale la fin du flux, il n'arrete PAS la lecture :
 	// le composant ACE continue de jouer ce qu'il a en tampon, et
 	// Voix->Interrompre() ne coupe que le repli. Sans le Stop, une
@@ -545,14 +563,13 @@ bool AGuardSessionManager::AgentAudible()
 		return true;
 	}
 
-	if (Avatars)
+	// Cote ACE, pas d'etat de lecture public : on compare a la fin
+	// estimee, entretenue a chaque trame envoyee (voir le membre).
+	if (UWorld* Monde = GetWorld())
 	{
-		if (UACEAudioCurveSourceComponent* Source = Avatars->TrouverComposantACE())
+		if (Monde->GetTimeSeconds() < FinLectureAcePresumee)
 		{
-			if (Source->IsPlaying())
-			{
-				return true;
-			}
+			return true;
 		}
 	}
 

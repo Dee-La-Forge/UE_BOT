@@ -572,6 +572,19 @@ private:
 	double InstantAgentAudible = -1.0e9;
 
 	/**
+	 * Fin ESTIMEE de la lecture Audio2Face de la replique en cours.
+	 *
+	 * Le composant ACE n'expose pas son etat de lecture (IsPlaybackActive
+	 * est prive) : on le deduit de ce qu'on lui envoie nous-memes — ancre
+	 * au premier envoi de la replique, majoree de GraceSuiviLecture (le
+	 * son part 0,7-1,4 s apres l'envoi, le temps de l'inference), puis
+	 * cumul de la duree des echantillons de chaque trame. L'estimation
+	 * depasse la realite d'une seconde environ : le micro reste sourd un
+	 * peu plus longtemps, jamais moins.
+	 */
+	double FinLectureAcePresumee = -1.0e9;
+
+	/**
 	 * Le suivi de lecture a-t-il deja ENTENDU quelque chose ?
 	 *
 	 * Tant que non, InstantAgentAudible date de l'armement du suivi : la
