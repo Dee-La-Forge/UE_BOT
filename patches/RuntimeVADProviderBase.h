@@ -33,10 +33,16 @@ class RUNTIMEAUDIOIMPORTER_API URuntimeVADProviderBase : public UObject
 	GENERATED_BODY()
 
 public:
+	// Les fonctions ci-dessous sont exposees au Blueprint parce que
+	// l'original l'etait : BP_FirstPersonCharacter appelle « Is Speech
+	// Active » sur cette classe. C'est le Blueprint lui-meme qui atteste
+	// de la signature perdue.
+
 	/**
 	 * Reset the provider's internal state (start of a new listening window).
 	 * @return True if the provider is ready to process audio
 	 */
+	UFUNCTION(BlueprintCallable, Category = "Voice Activity Detector")
 	virtual bool Reset() { return false; }
 
 	/**
@@ -46,15 +52,19 @@ public:
 	 * @return Negative on provider error (frame should be ignored),
 	 *         0 when no speech is active, positive while speech is active
 	 */
+	UFUNCTION(BlueprintCallable, Category = "Voice Activity Detector")
 	virtual int32 ProcessAudio(const TArray<float>& PCMData, int32 SampleRate) { return -1; }
 
 	/** Sample rate the provider expects, in Hz. */
+	UFUNCTION(BlueprintPure, Category = "Voice Activity Detector")
 	virtual int32 GetRequiredSampleRate() const { return 16000; }
 
 	/** Duration of one analysis frame, in milliseconds. */
+	UFUNCTION(BlueprintPure, Category = "Voice Activity Detector")
 	virtual float GetFrameDurationMs() const { return 32.0f; }
 
 	/** Whether speech is currently considered active. */
+	UFUNCTION(BlueprintPure, Category = "Voice Activity Detector")
 	virtual bool IsSpeechActive() const { return false; }
 
 	/** Called by the provider when a speech segment starts. */

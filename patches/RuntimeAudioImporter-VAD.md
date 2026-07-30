@@ -47,6 +47,31 @@ copy patches\RuntimeVADProviderBase.h ^
 puis reposer le plugin RuntimeAudioImporterSileroVAD dans unreal/Plugins/.
 C'est tout — aucune autre modification du plugin hote n'est necessaire.
 
+## Reste ouvert : `SetVADProvider` et l'ancien cablage Blueprint
+
+`BP_FirstPersonCharacter` (migre de l'ancien projet) appelle **deux**
+fonctions de l'extension d'origine :
+
+| Appel Blueprint | Etat |
+|---|---|
+| `IsSpeechActive` sur `RuntimeVADProviderBase` | **restaure** — le Blueprint attestait qu'elle etait BlueprintCallable, l'exposition est reconstruite |
+| `SetVADProvider` sur `StreamingSoundWave` | **NON restaure** |
+
+`SetVADProvider` n'a pas ete reconstruit volontairement : les broches
+(`Target`, `Provider`) donnent la signature, mais rien ne dit ce que la
+fonction FAISAIT — on ecrirait du code au hasard dans un plugin tiers.
+
+Et surtout, **plus personne n'en a besoin** : depuis le passage en C++,
+`UVisitorMicComponent` possede tout le chemin VAD. Il instancie le
+fournisseur Silero par nom de classe (`PreparerVAD`) et appelle
+`ProcessAudio` trame par trame ; il ne delegue rien a
+`StreamingSoundWave`. Ce cablage Blueprint est l'ANCIENNE methode.
+
+**Correction recommandee : supprimer le noeud `Set VADProvider` de
+`BP_FirstPersonCharacter`.** Tant qu'il est la, le Blueprint refuse de
+compiler (5 erreurs au demarrage, relevees le 30/07/2026) — pour une
+fonctionnalite que le C++ assure deja.
+
 ## Lecon
 
 Une extension maison logee dans un plugin tiers non versionne disparait

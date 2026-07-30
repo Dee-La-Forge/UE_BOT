@@ -82,6 +82,10 @@ captee par le micro repartait au sidecar comme parole du visiteur.
 
 ## Reste a faire
 
+- [ ] **Supprimer le noeud `Set VADProvider` de `BP_FirstPersonCharacter`** :
+      ancien cablage, il empeche le Blueprint de compiler (5 erreurs) pour
+      une fonction que `UVisitorMicComponent` assure deja en C++ — voir
+      `patches/RuntimeAudioImporter-VAD.md`
 - [x] Migrer les assets depuis l'ancien projet (3,4 Go, verifie par comptage)
 - [x] Blueprint de scenographie branche sur les evenements
 - [x] Capture micro + VAD vers `EnvoyerAudioVisiteur`
@@ -93,6 +97,13 @@ captee par le micro repartait au sidecar comme parole du visiteur.
 > ces deux chemins sont morts (voir `docs/LIPSYNC-DECISION.md`). C'est
 > **Audio2Face** (NV ACE, plugins locaux + patch UE 5.7, voir `patches/`)
 > qui anime le visage a partir des trames audio du sidecar.
+>
+> ⚠️ **Audio2Face exige une carte RTX** (coeurs Tensor). Sur un poste
+> Pascal — GTX 1060 essaye le 30/07/2026 — le plugin se charge mais
+> l'inference refuse : « No supported hardware found ». La borne bascule
+> alors en mode degrade (l'agent parle, bouche fermee), ce qui reste un
+> chemin utile a tester. **Le lipsync ne se valide que sur la borne.**
+> Detail dans `patches/NV_ACE_Reference-UE5.7.md`.
 
 ### Assets migres
 

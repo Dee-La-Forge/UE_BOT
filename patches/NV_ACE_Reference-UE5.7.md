@@ -1,5 +1,41 @@
 # Portage du plugin NVIDIA ACE vers Unreal Engine 5.7
 
+## PREREQUIS MATERIEL : Audio2Face exige une carte RTX
+
+Constate le 30/07/2026 sur un poste equipe d'une **GTX 1060** (Pascal),
+plugin correctement installe et charge :
+
+```
+LogACECore:        Loaded ACE plugin version 2.5.0-20250614-2282
+LogACEAimWrapper:  AIM feature 0x2e578b not available (No supported hardware found)
+LogACEA2FLocal:    Unable to load AIM Audio2Face-3D local execution feature,
+                   LocalA2F-James provider won't be available
+```
+
+Le moteur d'inference de NVIDIA (AIM/Nvigi) ne trouve pas de materiel
+compatible : Pascal n'a pas de coeurs Tensor, et le modele de diffusion
+3.0 en depend. **Aucun reglage ni patch n'y changera quoi que ce soit** —
+le montage etait bon, c'est le GPU qui manque. Sur la borne (RTX 3090 Ti),
+le meme plugin s'initialise normalement (voir « Etat au 29/07/2026 »).
+
+Consequences pratiques :
+
+- sur une machine sans RTX, la borne fonctionne en **mode degrade** :
+  `OuvrirSessionA2F` ne trouve aucun fournisseur `LocalA2F*`, journalise
+  l'avertissement prevu, et la voix passe par `AgentVoiceComponent` —
+  l'agent parle, bouche fermee. C'est un chemin utile a tester en soi ;
+- **la validation du lipsync ne peut se faire que sur la borne.** Le
+  chercher ailleurs fait perdre une soiree.
+
+Ne pas confondre ce cas avec l'echec silencieux documente plus bas
+(`nvaim.core.framework.dll` introuvable) : celui-la vient d'une copie
+incomplete du plugin, celui-ci du materiel. Le journal les distingue —
+« Failed to load ... dll » d'un cote, « No supported hardware found » de
+l'autre.
+
+---
+
+
 Le plugin `NV_ACE_Reference` v2.5.0rc3 n'est publie que pour UE **5.4, 5.5 et
 5.6**. Le projet tourne sur **5.7**. Ce document consigne ce qu'il a fallu
 faire, parce que le plugin pese 4 Go et n'est pas versionne — a la prochaine
