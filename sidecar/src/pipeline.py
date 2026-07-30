@@ -118,12 +118,22 @@ class Pipeline:
         # reviendra avec sa propre grammaire, aux finitions.
         self._intro_fixe = config["scenario"].get("intro_fixe", True)
 
+        # Texte de l'accueil nominal. La cle `accueil` de premier niveau est
+        # la bonne ; repli.accueil ne sert que de filet, et reste court parce
+        # qu'il est le repli d'URGENCE — celui qu'on entend quand quelque
+        # chose est deja casse. Les deux ne visent pas la meme situation, et
+        # ne doivent donc pas avoir la meme longueur.
+        self._texte_accueil = (
+            (self.scenario.get("accueil") or "").strip()
+            or (self.scenario.get("repli") or {}).get("accueil", "")
+        )
+
         # Verifie au CABLAGE : sans cette phrase, la borne accueillerait le
         # public en silence, et on ne le decouvrirait que devant lui.
-        if self._intro_fixe and not (self.scenario.get("repli") or {}).get("accueil"):
+        if self._intro_fixe and not self._texte_accueil:
             raise RuntimeError(
-                "scenario.intro_fixe est actif mais repli.accueil est vide : "
-                "aucune phrase d'accueil a reciter"
+                "scenario.intro_fixe est actif mais ni `accueil` ni "
+                "repli.accueil ne portent de texte : aucune phrase a reciter"
             )
 
         interro = self.scenario["interrogatoire"]
@@ -355,7 +365,7 @@ class Pipeline:
 
         if self._intro_fixe:
             async for element in self._reciter(
-                self.scenario["repli"]["accueil"], m, emotion="Stare"
+                self._texte_accueil, m, emotion="Stare"
             ):
                 yield element
             return
@@ -552,8 +562,14 @@ class Pipeline:
         # qu'une chaine vide : l'historique sert a reconstruire le prompt des
         # tours suivants, et un tour utilisateur vide y ferait un trou que le
         # modele interpreterait comme un silence du visiteur.
+        # NETTOYE avant d'entrer dans l'historique, pas seulement avant le
+        # TTS. L'historique reconstruit le prompt des tours suivants : y
+        # laisser le texte brut donnait au modele ses propres « madame » en
+        # exemple, et il s'imitait de tour en tour. Filtrer la voix sans
+        # filtrer la memoire ne corrige que ce qu'on entend.
         self.historique.append(
-            (texte_visiteur or "[Le visiteur se presente au poste.]", finale.texte)
+            (texte_visiteur or "[Le visiteur se presente au poste.]",
+             nettoyer_pour_tts(finale.texte))
         )
         self.etat.avancer(finale.verdict)
         self.emotion_courante = finale.emotion   # prosodie du tour suivant

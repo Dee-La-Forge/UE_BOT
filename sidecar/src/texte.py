@@ -43,6 +43,35 @@ _ETIQUETTE_EMOTION = re.compile(
     r"^\s*(Stare|Concerned|Angry|Neutral|Happy)\b\s*[:.\-–]?\s*",
     re.IGNORECASE,
 )
+# --- Appellatifs de genre -----------------------------------------------
+#
+# La persona l'interdit en toutes lettres : « Tu ne designes JAMAIS le genre
+# du visiteur : ni "monsieur", ni "madame". » Le modele passe outre des que
+# le visiteur donne un prenom marque — releve par bench/dialogue_test.py le
+# 31/07/2026, sur deux profils de visiteur sur trois :
+#
+#   « vous mentez, madame. Qui etes-vous vraiment ici ? »
+#   « Doutez-vous de vos mots, monsieur Victor ? »
+#
+# La grammaire GBNF ne peut rien ici : elle contraint la FORME d'une
+# replique — deux phrases, terminaison en « ? » — jamais son VOCABULAIRE.
+# Un plancher de caracteres n'interdit pas un mot.
+#
+# Deux passes, parce que la virgule ne se traite pas pareil selon la suite :
+#
+#   « monsieur Victor »           -> « Victor »        (l'appellatif seul)
+#   « de vos mots, monsieur ? »   -> « de vos mots ? » (avec sa virgule)
+#
+# Sans la premiere, « de vos mots, monsieur Victor ? » perdait sa virgule et
+# donnait « de vos mots Victor ? ».
+_APPELLATIFS = r"monsieur|madame|mademoiselle|messieurs|mesdames|m'sieur|m'dame"
+# Suivi d'un nom propre : on ne retire que l'appellatif.
+_APPELLATIF_DEVANT_NOM = re.compile(
+    rf"\b(?:{_APPELLATIFS})\s+(?=[A-ZÀ-Ý])", re.IGNORECASE)
+# Seul : il emporte la virgule qui le precede.
+_APPELLATIF_SEUL = re.compile(
+    rf"[,;]?\s*\b(?:{_APPELLATIFS})\b", re.IGNORECASE)
+
 _ESPACES = re.compile(r"[ \t]{2,}")
 _SAUTS = re.compile(r"\n{2,}")
 
@@ -68,6 +97,12 @@ def nettoyer_pour_tts(texte: str) -> str:
     'Avez-vous ete signale ?'
     >>> nettoyer_pour_tts("**Papiers**, s'il vous plait.")
     "Papiers, s'il vous plait."
+    >>> nettoyer_pour_tts("Doutez-vous de vos mots, monsieur Victor ?")
+    'Doutez-vous de vos mots, Victor ?'
+    >>> nettoyer_pour_tts("Vous mentez, madame. Qui etes-vous ?")
+    'Vous mentez. Qui etes-vous ?'
+    >>> nettoyer_pour_tts("Madame, avancez.")
+    'Avancez.'
     """
     if not texte:
         return ""
@@ -88,6 +123,10 @@ def nettoyer_pour_tts(texte: str) -> str:
     t = _EMOJI.sub("", t)
     t = _ETIQUETTE_EMOTION.sub("", t)
 
+    # Appellatifs de genre : l'ordre des deux passes compte, voir plus haut.
+    t = _APPELLATIF_DEVANT_NOM.sub("", t)
+    t = _APPELLATIF_SEUL.sub("", t)
+
     # Guillemets francais avant la table : ils emportent leurs espaces.
     t = _GUILLEMET_OUVRANT.sub('"', t)
     t = _GUILLEMET_FERMANT.sub('"', t)
@@ -103,5 +142,13 @@ def nettoyer_pour_tts(texte: str) -> str:
     # ... mais le francais garde l'espace avant ! ? ; :
     t = re.sub(r"([!?;:])", r" \1", t)
     t = _ESPACES.sub(" ", t)
+
+    # Un appellatif retire en TETE de replique (« Madame, avancez. ») laisse
+    # sa ponctuation orpheline. On la coupe, et on rend la majuscule que le
+    # mot supprime portait.
+    t = t.strip()
+    t = re.sub(r"^[,;:.\s]+", "", t)
+    if t and t[0].islower():
+        t = t[0].upper() + t[1:]
 
     return t.strip()
