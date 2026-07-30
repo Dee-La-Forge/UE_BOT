@@ -485,11 +485,30 @@ private:
 
 	/**
 	 * (Re)demarre le suivi de lecture : estampille l'origine de la marge
-	 * anti-echo et arme la sonde. A appeler a CHAQUE source de parole qui
-	 * n'a pas de parole.fin propre — repliques de secours comprises, elles
-	 * n'en ont jamais eu et restaient sans origine de marge.
+	 * anti-echo et arme la sonde.
 	 */
 	void ArmerSuiviLecture();
+
+	/**
+	 * Fait parler la borne SANS le sidecar, et arme le suivi de lecture.
+	 *
+	 * Les repliques de secours n'ont pas de parole.fin : leur lecture n'a
+	 * d'origine de marge anti-echo que si le suivi est arme avec elles.
+	 * L'appariement Broadcast + ArmerSuiviLecture etait manuel sur trois
+	 * sites, et a derive des sa premiere version — il vit donc ici, et
+	 * toute nouvelle replique de secours DOIT passer par cette fonction.
+	 */
+	void DireRepliqueDeSecours(const FString& Texte);
+
+	/**
+	 * Coupe toute lecture en cours : flux, tampon ACE, voix de repli.
+	 *
+	 * EndAudioSamples signale la fin du flux, il n'arrete PAS la lecture —
+	 * ACE continue de jouer son tampon, et Voix->Interrompre() ne coupe
+	 * que le repli. Cette connaissance vivait en deux copies (fin de
+	 * session, panne IA), et la seconde a d'abord manque le Stop.
+	 */
+	void CouperLecture();
 
 	/** Glitch puis permutation — ou permutation directe sans effet. */
 	void LancerSubstitution();
@@ -552,11 +571,13 @@ private:
 	/** Dernier instant ou l'agent a ete constate audible (anti-echo). */
 	double InstantAgentAudible = -1.0e9;
 
-	/** Le suivi de lecture a-t-il deja ENTENDU quelque chose ? */
+	/**
+	 * Le suivi de lecture a-t-il deja ENTENDU quelque chose ?
+	 *
+	 * Tant que non, InstantAgentAudible date de l'armement du suivi : la
+	 * meme estampille sert d'origine au delai de grace ci-dessous.
+	 */
 	bool bLectureObservee = false;
-
-	/** Depart du suivi en cours, pour borner l'attente d'un son qui ne vient pas. */
-	double InstantDebutSuivi = 0.0;
 
 	/**
 	 * Temps laisse a la lecture pour DEMARRER apres l'armement du suivi.

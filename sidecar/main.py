@@ -59,6 +59,11 @@ async def principal() -> int:
         log.error("modele manquant : %s", e)
         log.error("lancer scripts/telecharger.sh")
         return 1
+    except RuntimeError as e:
+        # Refus volontaire au demarrage : cle de config invalide
+        # (grammaire manquante, fonctionnalite retiree reactivee).
+        log.error("configuration invalide : %s", e)
+        return 1
 
     log.info("STT %s/%s  |  TTS %s  |  LLM %s",
              config["stt"]["modele"], config["stt"]["peripherique"],

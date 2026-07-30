@@ -49,6 +49,10 @@ class Replique:
 
 
 class ClientLLM:
+    # Les trois phases du scenario ont chacune leur grammaire — ce sont les
+    # cles que machine_etats.py distribue via SessionEtat.grammaire.
+    GRAMMAIRES_REQUISES = ("entretien", "verdict", "cloture")
+
     def __init__(self, config: dict, racine: Path):
         self.url = config["url"].rstrip("/")
         self.temperature = config.get("temperature", 0.7)
@@ -68,6 +72,20 @@ class ClientLLM:
                 ligne for ligne in brut.splitlines()
                 if not ligne.lstrip().startswith("#")
             ).strip()
+
+        # Verifie au CABLAGE, pas au premier tour : une faute de frappe
+        # dans config.yaml ne se decouvrait qu'apres qu'un visiteur avait
+        # deja recu une generation sans aucune contrainte — ni bornes de
+        # questions, ni format de tags. Meme politique de refus au
+        # demarrage que tts.phonemes_pour_repli ; le warning de phrases()
+        # reste en filet.
+        manquantes = [n for n in self.GRAMMAIRES_REQUISES
+                      if n not in self._grammaires]
+        if manquantes:
+            raise RuntimeError(
+                "grammaires manquantes dans llm.grammaires : "
+                + ", ".join(manquantes)
+            )
 
         # Le delai par defaut porte sur CHAQUE lecture, pas sur le total :
         # un llama.cpp sain streame un chunk toutes les quelques dizaines de

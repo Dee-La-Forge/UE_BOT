@@ -51,6 +51,11 @@ class Transcripteur:
         # dans ctranslate2, crash dur du sidecar. L'attente du verrou est
         # bornee (ATTENTE_VERROU) : voir transcrire().
         self._verrou = threading.Lock()
+        # Epoque du couple (verrou, modele). Quand un thread gele detient
+        # le verrou pour de bon, on abandonne verrou ET modele au thread et
+        # on repart a neuf ; l'epoque empeche le naufrage de recharger son
+        # vieux monde par-dessus le nouveau quand il finit par se reveiller.
+        self._epoque = 0
         self._modele = self._charger()
 
     def _charger(self) -> WhisperModel:
@@ -118,18 +123,36 @@ class Transcripteur:
         # de l'executor partage par enonce derriere une inference gelee,
         # jusqu'a l'assecher : plus aucun to_thread ne partait, TTS et
         # repliques de secours compris — borne muette, sans crash ni trace.
-        # Et attendre 20 s gaspillait le budget du tour dans la file avant
-        # de lancer une inference que plus personne ne lirait.
-        # TimeoutError : meme traitement qu'un etage hors delai (repli
-        # « indisponible ») — alias d'asyncio.TimeoutError depuis 3.11.
         if not self._verrou.acquire(timeout=self.ATTENTE_VERROU):
-            raise TimeoutError("inference STT precedente encore en cours")
+            # Ces echecs COMPTENT : sans cela, un verrou tenu pour toujours
+            # (thread gele dans ctranslate2) rendait toute la mecanique de
+            # recuperation inatteignable — « Repetez. » a chaque enonce,
+            # pour toujours, sans une ligne au-dela du warning.
+            self._echecs_inference += 1
+            if (self._peripherique != "cpu"
+                    and self._echecs_inference >= self.ECHECS_AVANT_CPU):
+                _log.error(
+                    "verrou STT tenu depuis %d enonces — thread gele "
+                    "abandonne, on repart a neuf sur CPU",
+                    self._echecs_inference,
+                )
+                self._epoque += 1
+                self._verrou = threading.Lock()
+                self._echecs_inference = 0
+                self._basculer_cpu()
+            # RuntimeError, pas TimeoutError : le cas courant est un
+            # rechargement de quelques secondes encore en cours, qui se
+            # resorbe seul. Faire repeter le visiteur (« Repetez. »)
+            # suffit ; « Poste ferme. Repassez plus tard. » le chassait a
+            # l'instant meme ou le modele redevenait sain.
+            raise RuntimeError("inference STT precedente encore en cours")
         try:
             return self._transcrire_verrouille(audio, taux)
         finally:
             self._verrou.release()
 
     def _transcrire_verrouille(self, audio: np.ndarray, taux: int) -> str:
+        epoque = self._epoque
         if taux != 16000:
             # Reechantillonnage lineaire : suffisant ici, la qualite du
             # signal micro est le facteur limitant, pas l'interpolation.
@@ -150,9 +173,15 @@ class Transcripteur:
                 initial_prompt=self._contexte,
             )
             texte = " ".join(s.text.strip() for s in segments).strip()
-            self._echecs_inference = 0
+            if epoque == self._epoque:
+                self._echecs_inference = 0
             return texte
         except Exception:
+            if epoque != self._epoque:
+                # Le monde a change pendant qu'on tournait : verrou et
+                # modele ont ete remplaces (bascule CPU pour verrou tenu).
+                # Surtout ne pas recharger notre vieux monde par-dessus.
+                raise
             self._echecs_inference += 1
             # Le tour courant est perdu — le repli d'en haut s'en charge —
             # mais le SUIVANT doit trouver un modele en etat de marche.

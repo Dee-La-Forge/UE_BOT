@@ -139,10 +139,13 @@ class Serveur:
         finally:
             try:
                 await self._envoyer(ws, "parole.fin")
-            except (websockets.ConnectionClosed, asyncio.CancelledError):
-                # Socket morte, ou seconde annulation pendant la cloture :
-                # plus rien a garantir ici. L'annulation d'origine, elle,
-                # repart apres le finally.
+            except websockets.ConnectionClosed:
+                # Socket morte : Unreal fera son propre menage. On n'avale
+                # PAS CancelledError ici : si la PREMIERE annulation de la
+                # tache frappe cet await (le corps du try fini), l'avaler
+                # faisait survivre la tache a son propre cancel() — asyncio
+                # ne la re-delivre pas — et l'appelant continuait de
+                # streamer sur une session que le demontage croyait arretee.
                 pass
 
     async def _replique_de_repli(self, ws: ServerConnection, cle: str) -> None:

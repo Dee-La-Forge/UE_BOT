@@ -42,7 +42,17 @@ async def _rejouer(jetons: list[str]) -> tuple[list[str], Replique | None, int]:
     corps = _corps_sse(jetons)
     transport = httpx.MockTransport(lambda requete: httpx.Response(200, content=corps))
 
-    client = ClientLLM({"url": "http://faux"}, RACINE)
+    # Les vraies grammaires du depot : le constructeur exige desormais les
+    # trois cles, et c'est autant de verification gratuite qu'elles se
+    # chargent sans erreur.
+    client = ClientLLM({
+        "url": "http://faux",
+        "grammaires": {
+            "entretien": "grammars/entretien.gbnf",
+            "verdict": "grammars/verdict.gbnf",
+            "cloture": "grammars/cloture.gbnf",
+        },
+    }, RACINE)
     await client._client.aclose()
     client._client = httpx.AsyncClient(transport=transport)
 
