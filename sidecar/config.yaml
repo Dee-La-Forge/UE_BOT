@@ -153,6 +153,24 @@ tts:
 
 scenario:
   fichier: "scenario/agent.yaml"
+  # L'agent RECITE son accueil au lieu de le generer.
+  #
+  # La phrase est scenario/agent.yaml -> repli.accueil, ecrite pour le
+  # personnage : « Macerio, controle frontalier. Declinez votre identite. »
+  #
+  # Pourquoi la reciter : l'intro etait generee sous entretien.gbnf, la
+  # seule grammaire disponible a zero question. Cette grammaire impose
+  # « (reaction) question? ». A l'intro il n'y a rien a quoi reagir, et le
+  # modele remplissait le creneau vide avec le soupcon de la persona —
+  # « vous mentez... » aux trois sessions du 31/07/2026, avant que le
+  # visiteur ait ouvert la bouche. Elle interdit aussi l'imperatif que le
+  # scenario demande : la consigne et la contrainte se contredisaient.
+  #
+  # C'est le seul tour de parole que TOUT visiteur entend. Le reciter le
+  # rend identique a chaque session et retire une variable de la chaine
+  # pendant qu'on valide le reste. Repasser a false rend la main au modele
+  # — a faire quand intro.gbnf existera, aux finitions.
+  intro_fixe: true
   # Le nombre de questions (min/max) vit dans scenario/agent.yaml
   # (interrogatoire.questions_min/max) — source de verite unique. Les delais
   # visiteur (reponse, abandon) vivent cote Unreal : DelaiReponseVisiteur et

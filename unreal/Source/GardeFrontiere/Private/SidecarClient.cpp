@@ -39,6 +39,12 @@ void USidecarClient::Connecter(const FString& Url)
 	// PCM16 d'un octet — du bruit a la place de la voix.
 	FragmentEnCours.Reset();
 
+	// Meme raison pour ces deux-la : une trame annoncee mais jamais remise,
+	// ou une cloture en attente d'elle, ne doivent pas survivre a la
+	// connexion qui les a produites.
+	bTrameAudioAttendue = false;
+	bFinDiffere = false;
+
 	if (!FModuleManager::Get().IsModuleLoaded(TEXT("WebSockets")))
 	{
 		FModuleManager::Get().LoadModule(TEXT("WebSockets"));
@@ -93,6 +99,15 @@ void USidecarClient::Connecter(const FString& Url)
 			{
 				bTrameAudioAttendue = false;
 				TraiterBinaire(FragmentEnCours);
+
+				// La trame attendue est remise : la cloture qui patientait
+				// peut partir. C'est ICI qu'elle doit le faire, apres
+				// TraiterBinaire — l'ordre est tout l'objet du correctif.
+				if (bFinDiffere)
+				{
+					bFinDiffere = false;
+					OnParoleFin.Broadcast();
+				}
 			}
 			FragmentEnCours.Reset();
 		});
@@ -220,6 +235,15 @@ void USidecarClient::TraiterMessage(const FString& Message)
 	}
 	else if (Evenement == TEXT("parole.fin"))
 	{
+		// Une trame a ete annoncee mais pas encore remise : la cloture
+		// attend. La diffuser maintenant ferait retomber bRepliqueEnCours
+		// avant l'arrivee de l'audio, qui serait alors jete — voir
+		// bFinDiffere.
+		if (bTrameAudioAttendue)
+		{
+			bFinDiffere = true;
+			return;
+		}
 		OnParoleFin.Broadcast();
 	}
 	else if (Evenement == TEXT("emotion"))
@@ -291,6 +315,19 @@ void USidecarClient::SurFermeture(int32 Code, const FString& Raison, bool bParPa
 	bConnexionEnCours = false;
 	UE_LOG(LogGardeFrontiere, Warning,
 		TEXT("Sidecar : deconnecte (code %d, %s)"), Code, *Raison);
+
+	// La trame qu'on differait n'arrivera plus : on clot avant d'annoncer
+	// la panne. Sans cela, bRepliqueEnCours restait verrouille a vrai —
+	// micro sourd — pour une trame que la socket morte ne remettra jamais.
+	// C'est exactement le trou que bFinDiffere pourrait creuser s'il n'etait
+	// purge que du cote heureux.
+	if (bFinDiffere)
+	{
+		bFinDiffere = false;
+		bTrameAudioAttendue = false;
+		OnParoleFin.Broadcast();
+	}
+
 	OnPanne.Broadcast(Raison.IsEmpty() ? TEXT("connexion fermee") : Raison);
 }
 

@@ -178,4 +178,33 @@ private:
 	 * voix.
 	 */
 	bool bTrameAudioAttendue = false;
+
+	/**
+	 * Un `parole.fin` est arrive alors qu'une trame audio annoncee n'avait
+	 * pas encore fini d'etre reassemblee : il attend son tour.
+	 *
+	 * Les deux canaux d'Unreal ne vont pas a la meme vitesse. Un message
+	 * TEXTE passe par OnMessage et part aussitot ; un message BINAIRE
+	 * passe par OnRawMessage, qui le livre par fragments qu'il faut
+	 * recoller. Quand le sidecar envoie sa derniere trame et clot dans la
+	 * foulee, le `parole.fin` double la trame en vol.
+	 *
+	 * Consequence mesuree le 31/07/2026, sonde a l'appui : parole.fin
+	 * arrivait UNE milliseconde apres le binaire, remettait
+	 * bRepliqueEnCours a faux, et la trame achevait son reassemblage pour
+	 * se faire jeter — « Audio rejete : ... hors replique ». La derniere
+	 * phrase de l'agent n'etait jamais prononcee.
+	 *
+	 * Le defaut existait avant l'intro recitee ; il ne se voyait pas parce
+	 * que la generation du modele laissait toujours un long silence entre
+	 * la derniere trame et la cloture. Une intro qui n'attend rien l'a mis
+	 * au jour — les 90 ms entre deux phrases suffisaient, la milliseconde
+	 * de la cloture non.
+	 *
+	 * On differe donc la cloture jusqu'a ce que la trame annoncee soit
+	 * remise. Le drapeau est purge a la deconnexion : sans cela, un cable
+	 * arrache entre le descripteur et sa trame laisserait bRepliqueEnCours
+	 * verrouille a vrai — micro sourd pour le reste de la session.
+	 */
+	bool bFinDiffere = false;
 };

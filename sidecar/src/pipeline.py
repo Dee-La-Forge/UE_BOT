@@ -16,6 +16,7 @@ modele : ils sont imposes par bascule de grammaire GBNF.
 from __future__ import annotations
 
 import asyncio
+import re
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from pathlib import Path
@@ -87,6 +88,43 @@ class Pipeline:
 
         chemin = racine / config["scenario"]["fichier"]
         self.scenario = yaml.safe_load(chemin.read_text(encoding="utf-8"))
+
+        # L'intro est-elle recitee ou generee ?
+        #
+        # RECITEE PAR DEFAUT, et c'est un choix de mise au point. L'intro
+        # etait generee sous la grammaire d'entretien — la seule que la
+        # machine a etats sache produire a zero question. Or entretien.gbnf
+        # impose « (reaction) question? » : un creneau de reaction, alors
+        # qu'a l'intro il n'y a rien a quoi reagir, et une terminaison en
+        # « ? » obligatoire, alors que le scenario demande un imperatif
+        # (« Declinez votre identite. »).
+        #
+        # Le modele remplissait donc le creneau vide avec la seule chose que
+        # la persona lui souffle — le soupcon. Releve trois fois sur trois le
+        # 31/07/2026, avant que le visiteur ait dit un mot :
+        #
+        #   « vous mentez-vous sur votre destination ? »
+        #   « vous mentez quand vous dites etre ici pour des affaires... ? »
+        #   « vous mentez, denoncez-vous, avouez votre velocite. [...] deten? »
+        #
+        # La troisieme montre l'autre effet du plafond : « car{25,110} "?" »
+        # force le point d'interrogation a 110 caracteres, ou que le modele
+        # en soit — d'ou la coupure en plein mot.
+        #
+        # Reciter supprime le LLM du seul tour de parole que TOUT visiteur
+        # entend, et rend l'accueil identique a chaque session : c'est ce
+        # qu'on veut d'une borne, et ce qu'il faut pour valider le reste de
+        # la chaine sans qu'une variable de plus s'y ajoute. La generation
+        # reviendra avec sa propre grammaire, aux finitions.
+        self._intro_fixe = config["scenario"].get("intro_fixe", True)
+
+        # Verifie au CABLAGE : sans cette phrase, la borne accueillerait le
+        # public en silence, et on ne le decouvrirait que devant lui.
+        if self._intro_fixe and not (self.scenario.get("repli") or {}).get("accueil"):
+            raise RuntimeError(
+                "scenario.intro_fixe est actif mais repli.accueil est vide : "
+                "aucune phrase d'accueil a reciter"
+            )
 
         interro = self.scenario["interrogatoire"]
         self.etat = SessionEtat(
@@ -315,8 +353,88 @@ class Pipeline:
         m.marquer("debut")
         m.marquer("stt_fin")   # pas de transcription : l'etape est nulle
 
+        if self._intro_fixe:
+            async for element in self._reciter(
+                self.scenario["repli"]["accueil"], m, emotion="Stare"
+            ):
+                yield element
+            return
+
         async for element in self._generer("", m):
             yield element
+
+    async def _reciter(
+        self,
+        texte: str,
+        m: Mesure,
+        emotion: str = "Stare",
+    ) -> AsyncIterator[MorceauAudio | Replique]:
+        """Dit une phrase ecrite d'avance, sans passer par le modele.
+
+        Meme contrat de sortie que _generer — des MorceauAudio puis une
+        Replique finale — pour que serveur.py n'ait pas a distinguer les
+        deux chemins : meme `parole.debut`, meme `parole.fin`, meme entree
+        dans l'historique.
+
+        Les marques LLM restent absentes du releve, volontairement. Mesure
+        .depuis() rend None sur une marque manquante : latence.jsonl
+        montrera un tour sans etage de generation, ce qui est exactement ce
+        qui s'est passe. Une marque a zero aurait menti.
+
+        DECOUPE EN PHRASES, comme _generer. Une premiere version synthetisait
+        tout d'un bloc — c'etait plus simple, et Unreal a jete la trame :
+
+          Audio rejete : 170496 octets recus hors replique
+          (bRepliqueEnCours=0, phase=Accueil)
+
+        L'agent n'a pas prononce son accueil. Le chemin de streaming, lui,
+        n'a jamais rate une replique : il envoie ~70 Ko par phrase la ou ce
+        bloc unique en faisait 170 Ko (3,9 s d'un coup). Plutot que de
+        traiter ce cas a part, on emprunte exactement le meme chemin —
+        memes tailles de trames, meme cadence. Un chemin eprouve vaut mieux
+        qu'un chemin special, et le premier son part plus tot par-dessus le
+        marche.
+        """
+        prononcable = nettoyer_pour_tts(texte)
+
+        # Decoupe sur la ponctuation finale, en la conservant. Le texte est
+        # ecrit a la main dans le scenario : pas de decimales ni
+        # d'abreviations a menager ici, contrairement au flux du modele.
+        morceaux = [p for p in re.split(r"(?<=[.!?])\s+", prononcable) if p.strip()]
+
+        premier = True
+        for phrase in morceaux:
+            parole = await asyncio.wait_for(
+                asyncio.to_thread(self.tts.synthetiser, phrase, emotion),
+                timeout=DELAI_TTS,
+            )
+
+            if premier:
+                m.marquer("tts_premier_chunk")
+                m.marquer("audio_premier_chunk")
+
+            yield MorceauAudio(
+                pcm=parole.pcm,
+                taux=parole.taux,
+                texte=phrase,
+                premier=premier,
+            )
+            premier = False
+
+        m.marquer("fin")
+
+        # L'intro n'a pas de tour visiteur : meme tour fictif que dans
+        # _generer, pour que le prompt des tours suivants ne voie pas un
+        # trou la ou l'agent a parle.
+        self.historique.append(
+            ("[Le visiteur se presente au poste.]", prononcable)
+        )
+        self.etat.avancer("EN_COURS")
+        self.emotion_courante = emotion
+
+        _log.info("agent [%s/EN_COURS, recite] : %s", emotion, prononcable)
+
+        yield Replique(texte=prononcable, emotion=emotion, verdict="EN_COURS")
 
     async def relance_silence(
         self,
@@ -448,8 +566,14 @@ class Pipeline:
     async def prechauffer(self) -> float | None:
         """Paye le cout du prefixe systeme avant l'arrivee du visiteur.
 
-        Utilise le prompt de l'INTRO — celui de la premiere replique de
-        chaque session, donc exactement le prefixe qu'on veut en cache.
+        Le bloc systeme est strictement statique (voir _systeme) : c'est lui
+        que llama.cpp garde en cache, et il est le meme a tous les tours.
+        Peu importe donc le rappel d'etat qu'on lui accole ici.
+
+        Avec intro_fixe, le premier appel au modele n'est plus l'accueil
+        mais la premiere question de l'interrogatoire — le prefixe mis en
+        cache reste le bon, et c'est desormais ce tour-la qu'on protege du
+        cout a froid (31 s mesures sans prechauffage, 955 ms avec).
         """
         return await self.llm.prechauffer(self._construire_prompt(""))
 
