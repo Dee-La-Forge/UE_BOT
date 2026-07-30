@@ -1,7 +1,10 @@
 # Sidecar IA locale
 
-Service IA local qui remplace les cinq prestations que Convai rendait par
-le reseau : STT, LLM, TTS, lipsync et memoire de session.
+Service IA local qui remplace quatre des cinq prestations que Convai rendait
+par le reseau : STT, LLM, TTS et memoire de session. Le lipsync, lui, est
+assure cote Unreal par **Audio2Face** (NVIDIA ACE, local) — voir
+`docs/LIPSYNC-DECISION.md` : NeuroSync et le repli par visemes MHF_* sont
+morts tous les deux.
 
 ## Pourquoi un processus separe
 
@@ -35,9 +38,12 @@ le local serait **plus lent** que Convai malgre la disparition du reseau.
 
 ## Installation
 
+```bash
+./scripts/telecharger.sh   # voix Piper + LLM + llama.cpp (tailles verifiees)
+```
+
 ```powershell
-.\scripts\setup.ps1        # environnement Python + voix Piper
-                           # (LLM et llama.cpp : telechargement manuel)
+.\scripts\setup.ps1        # environnement Python (venv + pip)
 ```
 
 Puis, dans deux terminaux :
@@ -65,7 +71,8 @@ C'est l'objet du prototype. Le bench chronometre chaque etage :
 Les releves s'accumulent dans `../benchmarks/latence.jsonl`.
 
 **Reference a battre : ~2500 - 4000 ms** (estimation de la chaine Convai
-actuelle). Cible visee : **1200 - 1800 ms**.
+actuelle). Cible : **600 - 1200 ms**. Atteint : **694 ms** jusqu'au premier
+son (releves dans `../benchmarks/latence.jsonl`).
 
 Comparer les deux LLM sur la meme machine :
 
@@ -83,17 +90,17 @@ la mesure qui tranche, pas l'intuition.**
 main.py                  point d'entree — serveur WebSocket
 config.yaml              tous les reglages (plus rien en dur)
 grammars/
-  entretien.gbnf         1 phrase, verdict INTERDIT   (< 5 questions)
-  verdict.gbnf           2 phrases, verdict autorise
-  cloture.gbnf           2 phrases, verdict OBLIGATOIRE (>= 10 questions)
+  entretien.gbnf         1 phrase, verdict INTERDIT   (< questions_min)
+  verdict.gbnf           2 phrases, verdict autorise  (>= questions_min, 6)
+  cloture.gbnf           2 phrases, verdict OBLIGATOIRE (>= questions_max, 10)
 scenario/agent.yaml      scenario transcrit du Narrative Design
 src/
   serveur.py             WebSocket — contrat d'evenements vers Unreal
   machine_etats.py       phases et bascule de grammaire — sans dep. lourde
-  pipeline.py            orchestration entrelacee
-  stt.py                 faster-whisper (GPU)
+  pipeline.py            orchestration entrelacee, bornes de temps par etage
+  stt.py                 faster-whisper (GPU, repli CPU)
   llm.py                 client streaming vers llama.cpp server
-  tts.py                 Piper (CPU) + frise de visemes MHF_*
+  tts.py                 Piper (CPU)
   texte.py               nettoyage avant TTS
   metrics.py             chronometrage par etage
 bench/
@@ -101,7 +108,8 @@ bench/
   client_test.py         simule Unreal, session complete
   generer_echantillons.py
   test_machine_etats.py  17 verifications      (sans modele)
-  test_decoupage.py       5 cas                (sans modele)
+  test_decoupage.py       7 cas — le VRAI ClientLLM.phrases (sans modele)
+  test_serveur.py         6 cas — sessions, verrous, connexions (sans modele)
   test_texte.py          14 cas                (sans modele)
 scripts/setup.ps1, lancer_llm.ps1, telecharger.sh
 ```
@@ -154,16 +162,18 @@ Le modele ne *peut pas* produire autre chose. `EMOTION` s'aligne sur l'enum
 tampon `WBP_Stamp`. Les tags arrivent **apres** le texte parle, pour que la
 lecture demarre sans les attendre.
 
-## ⚠️ Etat de ce prototype
+## Etat de ce prototype
 
-**Ce code n'a jamais ete execute.** Il a ete ecrit sans que les modeles
-soient installes sur la machine — ni LLM, ni voix Piper, ni llama.cpp. Il
-demande donc une premiere passe de mise au point.
+Le sidecar **tourne en conditions reelles** depuis le 27/07/2026 : sessions
+completes LiDAR → STT → LLM → TTS → verdict, 694 ms jusqu'au premier son,
+releves accumules dans `../benchmarks/latence.jsonl`. Les sessions des
+27-29/07 ont produit les correctifs consignes dans les commentaires de
+config.yaml et des sources.
 
-Ce qui est certain : l'architecture, le decoupage et l'instrumentation.
-Ce qui reste a valider : le comportement reel a l'execution, et surtout
-**les chiffres de latence**, qui sont l'unique juge de ce chantier.
+Ce qui reste a valider : la tenue sur la duree (test thermique 2 h) et le
+comportement avec le micro definitif de la borne.
 
-`scenario/agent.yaml` est un **placeholder**. Le vrai scenario vit sur les
-serveurs Convai (Character ID `080151a8-4885-11f1-a397-42010a7be02e`) et
-**doit etre exporte avant toute resiliation d'abonnement**.
+`scenario/agent.yaml` porte la persona d'origine transcrite, mais la
+**backstory / knowledge bank** du personnage Convai (Character ID
+`080151a8-4885-11f1-a397-42010a7be02e`) reste a exporter **avant toute
+resiliation d'abonnement**.

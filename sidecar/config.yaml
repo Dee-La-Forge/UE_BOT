@@ -66,25 +66,27 @@ llm:
     cloture: "grammars/cloture.gbnf"       # verdict impose    (>= questions_max)
 
 tts:
-  moteur: "piper"     # piper | xtts
-  voix: "fr_FR-siwis-medium"
-  peripherique: "cpu"
+  # Piper, sur CPU (il n'utilise pas le GPU : inutile de le configurer).
+  voix: "fr_FR-siwis-medium"   # sortie a 22 050 Hz — le champ `taux` des
+                               # parole.audio fait foi cote Unreal
   vitesse: 1.0
+  volume: 1.0
+  # Alignements phonemes actives au chargement (patch du modele ONNX). Ils
+  # ne servaient qu'au lipsync de repli par visemes MHF_*, chemin supprime :
+  # le lipsync vient d'Audio2Face, cote Unreal (voir docs/LIPSYNC-DECISION.md).
+  phonemes_pour_repli: false
 
-lipsync:
-  # NeuroSync Local API — audio vers 61 blendshapes ARKit + 7 emotions
-  active: true
-  url: "http://127.0.0.1:5000"
-  # Repli si NeuroSync est indisponible : mapping phonemes vers les
-  # 25 poses MHF_* deja presentes dans le plugin Convai.
-  repli_visemes: true
+# Le bloc `lipsync:` (NeuroSync + repli visemes) a ete retire le 30/07/2026 :
+# aucune de ses cles n'etait lue par le code, NeuroSync ne repond pas a
+# l'audio (checkpoint divergent) et le chemin visemes a ete supprime. Le
+# lipsync est assure par Audio2Face, entierement cote Unreal.
 
 scenario:
   fichier: "scenario/agent.yaml"
-  nb_questions: 3
-  # Delais de la machine a etats (secondes)
-  timeout_reponse_visiteur: 12.0
-  timeout_abandon: 30.0
+  # Le nombre de questions (min/max) vit dans scenario/agent.yaml
+  # (interrogatoire.questions_min/max) — source de verite unique. Les delais
+  # visiteur (reponse, abandon) vivent cote Unreal : DelaiReponseVisiteur et
+  # DelaiAbandon sur AGuardSessionManager.
 
 mesures:
   # Chronometrage de chaque etage — c'est l'objet du prototype

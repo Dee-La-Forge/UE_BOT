@@ -24,10 +24,10 @@ et intestable.
    ┌──────────── Veille ◄──────────────────────────────┐
    │               │ capteur : presence                 │
    │               ▼                                    │
-   │           Accueil ──► [GLITCH + SWITCH AVATAR]     │
+   │           Accueil (l'agent en poste interpelle)    │
    │               │                                    │
    │               ▼                                    │
-   │       Interrogatoire (5 a 10 questions)            │
+   │       Interrogatoire (6 a 10 questions)            │
    │               │                                    │
    │               ▼                                    │
    │           Verdict ──► [TAMPON accepte | refuse]    │
@@ -35,8 +35,9 @@ et intestable.
    │               ▼                                    │
    │        SortieZone ──► [PANNEAU "quittez la zone"]  │
    │               │                                    │
-   └── capteur : absence ───────────────────────────────┘
-                   ▲
+   └── capteur : absence ──► [GLITCH + SWITCH AVATAR]  ─┘
+                   ▲          (zone vide uniquement —
+                   │           sinon substitution differee)
                    │ abandon / timeout a tout moment
 ```
 
@@ -69,32 +70,45 @@ Blueprint fait parler l'agent malgre tout.
 
 | Panne | Comportement |
 |---|---|
-| Sidecar injoignable | replique de secours, reconnexion toutes les 5 s |
+| Sidecar injoignable | replique de secours (**une annonce par session**), reconnexion toutes les 5 s |
+| Sidecar gele, socket ouverte | watchdog `DelaiReponseSidecar` : deconnexion forcee, meme chemin |
 | Capteur debranche | session en cours liberee, reouverture du port en boucle |
 | Aucune interaction | abandon apres `DelaiAbandon` |
+| Zone encore occupee apres un abandon | nouvelle session apres `DelaiReprisePresence` (le capteur ne rend que des fronts) |
+
+Le micro est par ailleurs **sourd pendant que l'agent est audible** (flux,
+tampon ACE, marge `MargeEchoApresReplique`) : sans ce garde, la voix TTS
+captee par le micro repartait au sidecar comme parole du visiteur.
 
 ## Reste a faire
 
-- [ ] Migrer les assets depuis l'ancien projet (~1,7 Go, voir ci-dessous)
-- [ ] Blueprint de scenographie branche sur les evenements
-- [ ] Source LiveLink ARKit pour recevoir les blendshapes du sidecar
-- [ ] Capture micro + VAD vers `EnvoyerAudioVisiteur`
-- [ ] Lecture des trames audio recues
+- [x] Migrer les assets depuis l'ancien projet (3,4 Go, verifie par comptage)
+- [x] Blueprint de scenographie branche sur les evenements
+- [x] Capture micro + VAD vers `EnvoyerAudioVisiteur`
+- [x] Lecture des trames audio recues (Audio2Face + repli `Voix`)
+- [ ] Micro physique sur la borne (aucun peripherique de capture)
+- [ ] Test thermique 2 h, pile complete
 
-### Assets a migrer
+> Le lipsync ne passe PAS par LiveLink ARKit ni par les visemes MHF_* :
+> ces deux chemins sont morts (voir `docs/LIPSYNC-DECISION.md`). C'est
+> **Audio2Face** (NV ACE, plugins locaux + patch UE 5.7, voir `patches/`)
+> qui anime le visage a partir des trames audio du sidecar.
+
+### Assets migres
 
 | Depuis l'ancien projet | Poids |
 |---|---|
 | `Content/MetaHumans/AgentGermain` | 721 Mo |
 | `Content/MetaHumans/Common` | 253 Mo |
 | `Plugins/Convai/Content/MetaHumans/Animations` | 696 Mo |
+| `Content/PoliceUniform` | 394 Mo — d'abord exclu, puis migre : l'agent apparaissait nu sans lui |
 | `Content/GlitchFx`, `StampFx`, `Materials`, `Meshes` | 9 Mo |
 
-**A ne pas migrer** : `AgentGrondin` (737 Mo) et `AgentSmith` (707 Mo), sans
-Character ID ni reference ; `PoliceUniform` (394 Mo) ; les 18 maps de
-presets d'eclairage MetaHuman.
+**Non migres** : `AgentGrondin` (737 Mo) et `AgentSmith` (707 Mo), sans
+Character ID ni reference ; les 18 maps de presets d'eclairage MetaHuman.
 
 > Le dossier `Animations` du plugin Convai est **indispensable** : il porte
-> les AnimBP corps et visage, les 25 poses de visemes `MHF_*`, les 16 poses
-> d'emotions et le suivi du regard. « Se defaire de Convai » n'a jamais
-> voulu dire desinstaller ce plugin.
+> les AnimBP corps et visage et les 16 poses d'emotions. « Se defaire de
+> Convai » n'a jamais voulu dire desinstaller ce plugin — mais le droit
+> d'utiliser ces assets apres resiliation de l'abonnement reste a verifier
+> (voir THIRD-PARTY.md a la racine).

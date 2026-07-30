@@ -36,18 +36,23 @@ pour liberer la place au suivant.
 ```
 ┌─── UNREAL (60 fps garantis) ──────────────────────────┐
 │  LiDAR (serie) ──► GuardSessionManager (C++)          │
-│  Capture micro + VAD                       (conserve) │
-│  Streaming audio                           (conserve) │
+│  Capture micro + VAD (Silero)              (conserve) │
 │  AnimBP corps + emotions                   (conserve) │
-│  LiveLink ARKit ◄── visage            (deja active)   │
-└──────────┬─────────────────────────▲──────────────────┘
-           │ WebSocket localhost     │ LiveLink
-┌──────────▼─────────────┐  ┌────────┴──────────────────┐
-│  STT   whisper.cpp     │  │  NeuroSync Local API      │
-│  LLM   quantifie + GBNF│─►│  audio → 61 ARKit + 7 emo │
-│  TTS   Piper / XTTS ───┼─►│  60 fps                   │
-└────────────────────────┘  └───────────────────────────┘
+│  Audio2Face (NV ACE, local) : trames audio            │
+│    → voix + visage anime          (patch UE 5.7 —     │
+│                                    voir patches/)     │
+└──────────┬────────────────────────────────────────────┘
+           │ WebSocket localhost (contrat : docs/CONTRAT-EVENEMENTS.md)
+┌──────────▼──────────────────────┐
+│  STT   faster-whisper (GPU)     │
+│  LLM   llama.cpp + GBNF         │
+│  TTS   Piper (CPU, 22 050 Hz)   │
+└─────────────────────────────────┘
 ```
+
+> Le lipsync ne passe plus par NeuroSync ni par les visemes MHF_* : les deux
+> chemins sont morts (`docs/LIPSYNC-DECISION.md`). Audio2Face anime le
+> visage cote Unreal, a partir des trames audio du sidecar.
 
 **Principe directeur : sidecar local, pas d'embarque dans Unreal.**
 Le loopback coute moins d'1 ms — negligeable — et on y gagne trois choses
@@ -71,11 +76,12 @@ demarre pendant que le LLM ecrit la suite. Cible : premier son en
 | Specs materielles de la borne | ✅ `docs/DIMENSIONNEMENT.md` |
 | Narrative Design Convai | ✅ `docs/NARRATIVE-DESIGN.md` |
 | Sidecar STT→LLM→TTS | ✅ **694 ms** jusqu'au premier son |
-| Lipsync local | ✅ visemes MHF_* (0 ms de derive) + NeuroSync |
+| Lipsync local | ✅ **Audio2Face** (NV ACE local, patch UE 5.7 — `patches/`) ; NeuroSync et visemes MHF_* abandonnes (`docs/LIPSYNC-DECISION.md`) |
 | Projet Unreal 5.7 + C++ | ✅ compile et lie |
 | Migration des assets | ✅ 3,4 Go, verifie par comptage |
 | **Parite avec l'ancien projet** | ✅ **la borne tourne a l'identique** |
-| Bascule vers le sidecar | ⬜ **prochaine etape** |
+| Bascule vers le sidecar | ✅ la borne tient une conversation entiere (LiDAR → STT → LLM → TTS → verdict) |
+| Licences tierces | ⬜ voir `THIRD-PARTY.md` — **statuer sur Qwen2.5-3B avant exploitation** |
 | Micro sur la borne | ⬜ aucun peripherique de capture |
 | Test thermique 2 h | ⬜ a mener une fois la pile complete |
 
@@ -86,8 +92,11 @@ LiDAR, declencheur narratif, MetaHuman, decor, VAD. Cette etape n'etait pas
 cosmetique : elle fournit une **base de comparaison**. Tout ce qui cassera
 desormais sera imputable a la nouvelle architecture, pas au demenagement.
 
-> ⚠️ La cle API Convai a ete remise pour cette verification. **A retirer**
-> une fois le sidecar branche — c'est la dependance qu'on supprime.
+> ⚠️ La cle API Convai a ete retiree des fichiers de config, mais elle
+> reste lisible dans l'**historique git d'un depot public** : elle doit etre
+> consideree comme compromise. **La revoquer/regenerer sur le dashboard
+> Convai** — apres avoir fini l'export du personnage si elle en conditionne
+> l'acces.
 
 ## Reste a recuperer depuis Convai
 
@@ -109,7 +118,13 @@ Tant que ce n'est pas fait, `sidecar/scenario/agent.yaml` porte une persona
 docs/        cadrage, audit, architecture, scenario
 sidecar/     service IA local (STT / LLM / TTS)
 unreal/      projet Unreal Engine
-benchmarks/  mesures de latence
+benchmarks/  mesures de latence (versionnees volontairement : c'est
+             l'objet du prototype)
+patches/     journaux de portage des plugins non versionnes
+             (NV ACE 2.5.0rc3 → UE 5.7)
+screenshoot/ captures d'ARCHIVE du dashboard Convai — narrative design et
+             graphes du personnage, seule trace avant resiliation. Ne pas
+             supprimer lors d'un nettoyage.
 ```
 
 ## Licence — point de vigilance

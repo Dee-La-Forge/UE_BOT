@@ -81,8 +81,8 @@ secrets.json
 # ---------- Logs & mesures ----------
 logs/
 *.log
-benchmarks/*.json
-!benchmarks/.gitkeep
+# benchmarks/ est VERSIONNE volontairement (latence.jsonl, gpu.csv) : les
+# mesures sont l'objet du prototype et servent de reference de comparaison.
 
 # ---------- OS ----------
 Thumbs.db

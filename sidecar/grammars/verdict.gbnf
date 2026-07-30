@@ -1,4 +1,5 @@
-# Grammaire de la phase de verdict — a partir de la 5e question repondue.
+# Grammaire de la phase de verdict — des que le plancher de questions est
+# atteint (interrogatoire.questions_min d'agent.yaml : 6 aujourd'hui).
 #
 # Le modele peut desormais clore l'entretien. Passe le plafond de
 # questions_max, le code bascule sur cloture.gbnf (voir machine_etats.py).
