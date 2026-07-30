@@ -259,6 +259,24 @@ public:
 		meta = (ClampMin = "2.0", Units = "s"))
 	float DelaiReponseSidecar = 10.f;
 
+	/**
+	 * Delai accorde a la PREMIERE replique d'une session.
+	 *
+	 * Elle est structurellement plus lente que les suivantes : llama.cpp
+	 * n'a aucun cache de prompt a reutiliser, et doit evaluer tout le bloc
+	 * systeme. Sur la borne c'est indolore (694 ms mesures) ; sur un poste
+	 * plus modeste, ou apres un redemarrage du sidecar, cela depasse le
+	 * delai ordinaire — releve le 30/07/2026 : l'intro mettait plus de
+	 * 10 s, Unreal declarait le sidecar mort ALORS QU'IL GENERAIT, et la
+	 * borne basculait en mode degrade devant un visiteur bien servi.
+	 *
+	 * Ne concerne que l'ouverture de scene. Les tours suivants gardent
+	 * DelaiReponseSidecar, plus severe, puisque le cache est chaud.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Garde Frontiere|Sidecar",
+		meta = (ClampMin = "2.0", Units = "s"))
+	float DelaiPremiereReponse = 30.f;
+
 	// =====================================================================
 	// Etat
 	// =====================================================================
@@ -470,7 +488,8 @@ private:
 
 	// Surveillance applicative : le sidecar doit repondre, pas seulement
 	// rester connecte.
-	void ArmerSurveillanceIA();
+	/** @param bPremiere  laisse DelaiPremiereReponse au lieu du delai ordinaire. */
+	void ArmerSurveillanceIA(bool bPremiere = false);
 	void AnnulerSurveillanceIA();
 	UFUNCTION() void SurSilenceIA();
 
@@ -479,6 +498,9 @@ private:
 
 	// Nouvelle session si la zone est restee occupee au retour en veille.
 	UFUNCTION() void SurReprisePresence();
+
+	/** Ouverture de session sans capteur — voir la CVar gf.SessionAuto. */
+	UFUNCTION() void SurReprisePresenceAuto();
 
 	// Suit la fin REELLE de la lecture apres parole.fin (tampon ACE).
 	UFUNCTION() void SurSuiviLecture();

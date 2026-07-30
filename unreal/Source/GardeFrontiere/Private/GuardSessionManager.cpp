@@ -20,6 +20,26 @@
 #include "TimerManager.h"
 #include "Engine/Engine.h"
 #include "Engine/World.h"
+#include "HAL/IConsoleManager.h"
+
+// Ouvre une session sans capteur, N secondes apres le demarrage.
+//
+// Une borne de mise au point n'a pas toujours son LiDAR : sur un poste de
+// developpement, rien ne declenche jamais presence.detectee, et la borne
+// reste en veille sans que ce soit une panne. Cette variable evite d'avoir
+// a cliquer dans l'editeur — elle se pose dans DefaultEngine.ini, section
+// [SystemSettings], donc sans recompiler ni toucher a la scene.
+//
+//   [SystemSettings]
+//   gf.SessionAuto=3
+//
+// 0 (le defaut) = comportement normal : seul le capteur ouvre une session.
+static TAutoConsoleVariable<float> CVarSessionAuto(
+	TEXT("gf.SessionAuto"),
+	0.f,
+	TEXT("Ouvre une session N secondes apres le demarrage, sans capteur.\n")
+	TEXT("Mise au point sans LiDAR. 0 = desactive."),
+	ECVF_Default);
 
 AGuardSessionManager::AGuardSessionManager()
 {
@@ -192,6 +212,29 @@ void AGuardSessionManager::BeginPlay()
 	}
 
 	UE_LOG(LogGardeFrontiere, Log, TEXT("Borne prete — en veille"));
+
+	// Mise au point sans LiDAR : voir CVarSessionAuto en tete de fichier.
+	const float DelaiAuto = CVarSessionAuto.GetValueOnGameThread();
+	if (DelaiAuto > 0.f)
+	{
+		UE_LOG(LogGardeFrontiere, Warning,
+			TEXT("DIAGNOSTIC : gf.SessionAuto=%.1f — session ouverte sans capteur"),
+			DelaiAuto);
+		if (UWorld* Monde = GetWorld())
+		{
+			Monde->GetTimerManager().SetTimer(
+				MinuterieReprise, this, &AGuardSessionManager::SurReprisePresenceAuto,
+				DelaiAuto, false);
+		}
+	}
+}
+
+void AGuardSessionManager::SurReprisePresenceAuto()
+{
+	if (Phase == EGuardPhase::Veille)
+	{
+		DemarrerSession();
+	}
 }
 
 void AGuardSessionManager::EndPlay(const EEndPlayReason::Type Raison)
@@ -890,8 +933,10 @@ void AGuardSessionManager::OuvrirLaScene()
 		// — processus bloque, socket TCP restee ouverte — laissait
 		// EstConnecte() vrai pour toujours : chaque visiteur affrontait
 		// DelaiAbandon secondes de silence total, sans jamais basculer en
-		// mode degrade. On attend donc une reponse dans un delai borne.
-		ArmerSurveillanceIA();
+		// mode degrade. On attend donc une reponse dans un delai borne —
+		// mais le delai LONG, celui de l'intro : elle est generee sans
+		// cache de prompt et n'a pas a etre jugee comme les suivantes.
+		ArmerSurveillanceIA(/*bPremiere=*/true);
 	}
 	else
 	{
@@ -1159,13 +1204,16 @@ void AGuardSessionManager::SurSilenceVisiteur()
 
 // -- Surveillance applicative du sidecar ----------------------------------
 
-void AGuardSessionManager::ArmerSurveillanceIA()
+void AGuardSessionManager::ArmerSurveillanceIA(bool bPremiere)
 {
 	if (UWorld* Monde = GetWorld())
 	{
+		// La premiere replique n'a aucun cache de prompt a reutiliser :
+		// elle est structurellement plus lente. Voir DelaiPremiereReponse.
+		const float Delai = bPremiere ? DelaiPremiereReponse : DelaiReponseSidecar;
 		Monde->GetTimerManager().SetTimer(
 			MinuterieSurveillanceIA, this, &AGuardSessionManager::SurSilenceIA,
-			FMath::Max(DelaiReponseSidecar, 2.f), false);
+			FMath::Max(Delai, 2.f), false);
 	}
 }
 
