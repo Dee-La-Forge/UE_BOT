@@ -70,18 +70,26 @@ void USidecarClient::Connecter(const FString& Url)
 			}
 
 			// L'implementation WebSocket d'Unreal presente AUSSI les
-			// messages TEXTE a OnRawMessage. Sans ce garde, chaque JSON du
-			// contrat repartait en audio : releve le 30/07/2026, les
-			// 62 octets de {"evenement": "session.demarree", ...} arrivaient
-			// dans le chemin audio une milliseconde apres avoir ete traites
-			// comme JSON. Pendant une replique, le descripteur parole.audio
-			// se serait injecte dans le PCM, entre deux morceaux de voix.
+			// messages TEXTE a OnRawMessage, APRES les avoir passes a
+			// OnMessage. Un descripteur parole.audio armait donc la
+			// reception... puis se faisait consommer LUI-MEME comme trame
+			// audio, a la place de la vraie qui suivait.
 			//
-			// Le contrat dit qu'une trame binaire est TOUJOURS annoncee par
-			// son descripteur : on ne consomme donc que ce qui a ete
-			// annonce. Tout le reste est du JSON qui a pris la mauvaise
-			// porte, et que TraiterMessage a deja lu.
-			if (bTrameAudioAttendue)
+			// Le symptome etait deroutant : « l'agent prend la parole » au
+			// journal, et pas un son — QueueAudio recevait du JSON. Il s'en
+			// plaignait d'ailleurs (ensure « BufferSize % SampleByteSize »,
+			// le texte ayant un nombre impair d'octets), et chaque vidage
+			// de pile coutait 2,8 s au thread de jeu.
+			//
+			// On ecarte donc explicitement ce qui est du JSON de notre
+			// protocole — il commence par '{' et finit par '}' — avant
+			// meme de consulter le descripteur.
+			const bool bEstJson =
+				FragmentEnCours.Num() >= 2
+				&& FragmentEnCours[0] == '{'
+				&& FragmentEnCours.Last() == '}';
+
+			if (!bEstJson && bTrameAudioAttendue)
 			{
 				bTrameAudioAttendue = false;
 				TraiterBinaire(FragmentEnCours);

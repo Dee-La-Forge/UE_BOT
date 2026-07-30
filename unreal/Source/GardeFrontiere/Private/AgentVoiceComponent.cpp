@@ -56,6 +56,21 @@ void UAgentVoiceComponent::EmpilerTrame(const TArray<uint8>& PCM16, int32 Taux)
 		return;
 	}
 
+	// Du PCM16 a forcement un nombre PAIR d'octets. QueueAudio le verifie
+	// par un ensure, dont le vidage de pile coute pres de trois secondes
+	// au thread de jeu — a chaque trame. Le 30/07/2026, un descripteur
+	// JSON passe par erreur dans le chemin audio a fait tomber cet ensure
+	// et gele la borne onze secondes, pour finir en silence. On refuse
+	// donc ici, et on dit quoi.
+	if (PCM16.Num() % 2 != 0)
+	{
+		UE_LOG(LogGardeFrontiere, Error,
+			TEXT("Voix : trame de %d octets (impair) — ce n'est pas du PCM16, ")
+			TEXT("elle est ecartee. Debut : %.20hs"),
+			PCM16.Num(), reinterpret_cast<const char*>(PCM16.GetData()));
+		return;
+	}
+
 	PreparerFlux(Taux);
 	if (!Flux)
 	{
