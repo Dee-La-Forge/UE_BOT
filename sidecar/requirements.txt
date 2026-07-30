@@ -9,6 +9,32 @@
 faster-whisper==1.0.3
 requests==2.32.3   # dependance transitive de faster-whisper, absente de ses metadonnees
 
+# --- TTS neuronal, FACULTATIF (tts.moteur: chatterbox-*) ---
+#
+# NE PAS installer avec un simple `pip install chatterbox-tts` : il tire
+# la variante CPU de PyTorch, et toutes les mesures de vitesse deviennent
+# fausses d'un facteur 6 sans que rien ne le signale.
+#
+#   pip install chatterbox-tts
+#   pip install --index-url https://download.pytorch.org/whl/cu124 \
+#       --force-reinstall torch==2.6.0+cu124 torchaudio==2.6.0+cu124
+#
+# (--force-reinstall est indispensable : pip compare 2.6.0 a 2.6.0 et
+# considere la variante CPU comme satisfaisante.)
+#
+# PIEGE, paye le 30/07/2026 : ctranslate2 (donc faster-whisper) importe
+# torch. Si les paquets nvidia-* ne correspondent pas a la variante CUDA
+# de torch, le SIDECAR ENTIER refuse de demarrer sur un WinError 127 —
+# le STT tombe avec le TTS. Les versions doivent s'accorder :
+#
+#   torch 2.6.0+cu124  ->  nvidia-cudnn-cu12==9.1.0.70
+#                          nvidia-cublas-cu12==12.4.5.8
+#                          nvidia-cuda-nvrtc-cu12==12.4.127
+#
+# Et ne JAMAIS copier de DLL CUDA a la main dans site-packages/ctranslate2 :
+# son __init__ charge tout ce qu'il y trouve, et une dependance manquante
+# fait echouer l'import du paquet entier.
+
 # --- TTS (CPU) ---
 # 1.6.0 minimum : les versions <= 1.2 dependent de piper-phonemize, qui n'a
 # aucun wheel Windows pour Python 3.12. La 1.6 s'en affranchit.

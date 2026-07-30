@@ -23,7 +23,16 @@ stt:
   # le viens de Paris ») et l'agent repondait a du charabia. Le GPU a la
   # marge (46 % d'usage releve en session). A remesurer ; revenir a small
   # si la latence STT redevient le poste dominant.
-  modele: "medium"    # tiny | base | small | medium | large-v3
+  # base SUR CE POSTE, medium SUR LA BORNE.
+  #
+  # medium en int8 sur PROCESSEUR met plusieurs minutes a se charger — le
+  # sidecar restait injoignable tout ce temps, et la borne avec. Or ce
+  # poste n'a aucun micro : la qualite de transcription n'y sert a rien,
+  # seule compte la rapidite de demarrage pour enchainer les essais.
+  #
+  # Sur la borne, medium est le bon choix et il est documente ci-dessous :
+  # small massacrait les enonces courts en conditions reelles.
+  modele: "base"      # tiny | base | small | medium | large-v3
   # cpu SUR CE POSTE, cuda SUR LA BORNE.
   #
   # La GTX 1060 n'a que 6 Go, et le rendu Unreal en consomme l'essentiel
