@@ -58,6 +58,14 @@ class ClientLLM:
         self.temperature = config.get("temperature", 0.7)
         self.top_p = config.get("top_p", 0.9)
         self.max_tokens = config.get("max_tokens", 200)
+        # Penalite de repetition : llama.cpp ne l'applique PAS par defaut
+        # (1.0 = desactivee), et sous grammaire contrainte le 3B en a un
+        # besoin criant. Releve le 30/07/2026, une question entiere :
+        # « motif de la visite, motif de la visite, motif de la visite… »
+        # jusqu'au plafond de 110 caracteres. La grammaire lui interdit de
+        # conclure autrement que par « ? » ; sans penalite, il remplit.
+        self.penalite_repetition = config.get("penalite_repetition", 1.15)
+        self.fenetre_repetition = config.get("fenetre_repetition", 256)
 
         # Deux grammaires : l'entretien interdit grammaticalement le verdict,
         # le verdict l'autorise. La bascule est pilotee par pipeline.py.
@@ -125,6 +133,8 @@ class ClientLLM:
             "temperature": self.temperature,
             "top_p": self.top_p,
             "n_predict": self.max_tokens,
+            "repeat_penalty": self.penalite_repetition,
+            "repeat_last_n": self.fenetre_repetition,
             "stream": True,
             "cache_prompt": True,  # reutilise le prefixe systeme entre les tours
         }

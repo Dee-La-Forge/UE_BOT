@@ -38,12 +38,28 @@ root ::= replique emotion verdict
 # le contiennent toujours.
 replique ::= (reaction " ")? question
 
-# "<" est exclu : sans cela, Qwen laisse fuir ses jetons speciaux
-# (<tool_call>, <|im_end|>) dans le texte destine au TTS.
-# Le saut de ligne l'est aussi : une replique parlee tient sur une ligne.
-reaction ::= [^\[<.!?\n]{2,60} [.!]
+# Classe POSITIVE, et c'est tout l'interet.
+#
+# Les anciennes regles etaient negatives ([^\[<.!?\n]) : elles ecartaient
+# une poignee de caracteres et laissaient passer TOUT le reste de
+# l'Unicode. Qwen — modele chinois — en a profite le 30/07/2026 :
+#
+#   « qui es-tu ？答辩。回答。声明。声明。声明。声明。… »
+#
+# Une voix francaise ne prononce pas ces caracteres ; le TTS les avale ou
+# les massacre, et rien ne signale l'anomalie. On enumere donc ce que
+# l'agent a le DROIT de dire : lettres latines accentuees, chiffres,
+# espace et ponctuation faible.
+#
+# Restent exclus, comme avant : les points et « ? » (ce sont les
+# terminaisons, gerees par les regles), « [ » (les tags), « < » (sans quoi
+# Qwen laisse fuir <tool_call> et <|im_end|> dans le texte parle) et le
+# saut de ligne (une replique parlee tient sur une ligne).
+car ::= [a-zA-Z0-9À-ÿŒœ ,;:'’«»()-]
 
-question ::= [^\[<.!?\n]{25,110} "?"
+reaction ::= car{2,60} [.!]
+
+question ::= car{25,110} "?"
 
 # Neutral est RETIRE pendant l'interrogatoire.
 #

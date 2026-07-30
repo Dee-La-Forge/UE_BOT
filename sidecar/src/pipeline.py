@@ -65,6 +65,22 @@ class Pipeline:
         self.config = config
         self.racine = racine
 
+        # La config se valide AVANT de charger le moindre poids : plusieurs
+        # gigaoctets et une minute d'attente pour finir sur une faute de
+        # frappe seraient une punition inutile.
+        #
+        # Le gabarit de prompt DEPEND DE LA FAMILLE DU MODELE : ChatML pour
+        # Qwen, [INST] pour Mistral et ses derives (NeMo Minitron). Servir
+        # du ChatML a un Mistral ne provoque aucune erreur — le modele
+        # repond, mais a cote : releve en essai reel, l'agent repetait une
+        # phrase sans rapport et jouait le role du visiteur. Un mauvais
+        # gabarit ne se voit que dans la qualite des reponses.
+        self._gabarit = config["llm"].get("gabarit", "chatml")
+        if self._gabarit not in ("chatml", "mistral"):
+            raise RuntimeError(
+                f"llm.gabarit inconnu : {self._gabarit!r} (chatml | mistral)"
+            )
+
         self.stt = Transcripteur(config["stt"])
         self.llm = ClientLLM(config["llm"], racine)
         self.tts = Synthetiseur(config["tts"], racine)
@@ -118,7 +134,13 @@ class Pipeline:
         e = self.etat
 
         if e.phase is Phase.INTRO:
-            return "[Debut du controle. Interpelle le visiteur.]"
+            # Le VOUVOIEMENT se rappelle ICI AUSSI. Il ne vivait que dans le
+            # rappel d'interrogatoire ci-dessous : l'intro, qui ne le voit
+            # jamais, tutoyait le visiteur des la premiere phrase — « qui
+            # es-tu ? » releve en essai reel le 30/07/2026. Or c'est
+            # precisement la replique que tout le monde entend.
+            return ("[Debut du controle. Interpelle le visiteur. "
+                    "VOUVOIE-le : « vous », jamais « tu ».]")
 
         # Le compteur ne sort PLUS du code. Il gouvernait le modele, qui
         # produisait alors « la question numero quatre » au lieu de mener un
@@ -182,17 +204,39 @@ class Pipeline:
         return rappel
 
     def _construire_prompt(self, entree_visiteur: str) -> str:
-        """Assemble le prompt au format ChatML (Qwen)."""
+        """Assemble le prompt au gabarit de la famille du modele."""
+        dernier = f"{entree_visiteur}\n{self._etat_courant()}"
+        if self._gabarit == "mistral":
+            return self._prompt_mistral(dernier)
+        return self._prompt_chatml(dernier)
+
+    def _prompt_chatml(self, dernier_tour: str) -> str:
+        """Format ChatML — Qwen."""
         parties = [
             "<|im_start|>system\n", self._systeme(), "<|im_end|>\n",
         ]
         for visiteur, agent in self.historique:
             parties.append(f"<|im_start|>user\n{visiteur}<|im_end|>\n")
             parties.append(f"<|im_start|>assistant\n{agent}<|im_end|>\n")
-        parties.append(
-            f"<|im_start|>user\n{entree_visiteur}\n{self._etat_courant()}<|im_end|>\n"
-        )
+        parties.append(f"<|im_start|>user\n{dernier_tour}<|im_end|>\n")
         parties.append("<|im_start|>assistant\n")
+        return "".join(parties)
+
+    def _prompt_mistral(self, dernier_tour: str) -> str:
+        """Format [INST] — Mistral, NeMo Minitron et derives.
+
+        Mistral n'a pas de role systeme : la consigne se loge dans le
+        premier bloc [INST]. On lui en donne un A LUI, clos par un accuse
+        de reception, plutot que de la coller au premier tour du visiteur.
+        C'est ce qui garde le prefixe RIGOUREUSEMENT statique — condition
+        du cache de prompt de llama.cpp, qui vaut 450 ms par tour (voir
+        _systeme). Colle au premier tour, le prefixe changerait des que
+        l'historique bouge, et tout serait recalcule a chaque fois.
+        """
+        parties = [f"<s>[INST] {self._systeme()} [/INST] Compris.</s>"]
+        for visiteur, agent in self.historique:
+            parties.append(f"[INST] {visiteur} [/INST] {agent}</s>")
+        parties.append(f"[INST] {dernier_tour} [/INST]")
         return "".join(parties)
 
     # -- Tour de parole ---------------------------------------------------

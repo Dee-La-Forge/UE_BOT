@@ -1,4 +1,4 @@
-# Sidecar IA locale — configuration
+﻿# Sidecar IA locale — configuration
 #
 # Tout ce qui etait code en dur dans l'ancien projet vit ici.
 # Modifiable sans recompiler quoi que ce soit.
@@ -53,9 +53,24 @@ llm:
   # charge est celui passe a scripts/lancer_llm.ps1. Garder les deux
   # accordes, sinon les releves de benchmarks/latence.jsonl mentent.
   modele: "qwen2.5-3b-instruct-q4_k_m.gguf"
+  # Gabarit de prompt, A ACCORDER AU MODELE ci-dessus :
+  #   chatml   Qwen
+  #   mistral  Mistral, NeMo Minitron et derives ([INST])
+  # Se tromper ne leve aucune erreur : le modele repond a cote, et on
+  # accuse le modele alors que c'est le gabarit. Releve en essai reel avec
+  # Minitron servi en ChatML — reponses hors sujet, agent jouant le role
+  # du visiteur.
+  gabarit: "chatml"
   temperature: 0.7
   top_p: 0.9
   max_tokens: 200
+  # Penalite de repetition. llama.cpp ne l'applique pas par defaut, et
+  # sous grammaire contrainte le modele remplit par repetition jusqu'au
+  # plafond de caracteres plutot que de conclure. 1.15 sur les 256
+  # derniers jetons : assez pour casser la boucle, pas assez pour
+  # l'empecher de reutiliser le vocabulaire du poste frontiere.
+  penalite_repetition: 1.15
+  fenetre_repetition: 256
   # Contraignent le format de sortie : texte parle, puis tags emotion/verdict.
   # La bascule entre les trois est pilotee par le nombre de questions posees
   # (voir pipeline.py) — le plancher et le plafond du Narrative Design

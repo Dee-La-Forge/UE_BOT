@@ -13,7 +13,12 @@ root ::= replique emotion verdict
 # essai reel) tout en laissant passer une cloture seche.
 replique ::= phrase (" " phrase)?
 
-phrase ::= [^\[<.!?\n]{12,110} [.!?]
+# Classe positive — voir entretien.gbnf : une classe negative laissait
+# passer tout l'Unicode, y compris les ideogrammes que la voix francaise
+# ne peut pas prononcer.
+car ::= [a-zA-Z0-9À-ÿŒœ ,;:'’«»()-]
+
+phrase ::= car{12,110} [.!?]
 
 emotion ::= "[EMOTION:" ("Stare" | "Concerned" | "Angry" | "Neutral" | "Happy") "]"
 
