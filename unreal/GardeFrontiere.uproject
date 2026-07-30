@@ -69,6 +69,11 @@
 			"MarketplaceURL": "com.epicgames.launcher://ue/marketplace/product/81fd278e318e4235a028d3fdf46bf036"
 		},
 		{
+			"_comment": "EN EVALUATION, pas en service : le STT nominal reste faster-whisper dans le sidecar. Reconnaissance vocale NVIDIA Riva, en flux et locale, avec le modele French_Conformer_140M installe a cote. L'interet n'est PAS la vitesse brute mais le mode : Whisper transcrit PAR LOT une fois le segment clos (820 a 1200 ms mesurees APRES que le visiteur s'est tu), Riva transcrit PENDANT qu'il parle et finalise apres le silence. La reserve est la taille du modele — 140M la ou le projet a deja abandonne whisper small parce qu'il massacrait les enonces courts en francais. Se tranche a l'oreille, SUR LA BORNE : le backend GPU est TensorRT-RTX, une GTX 1060 retombe en DirectML ou CPU et ne mesure rien de representatif.",
+			"Name": "ACE_ASR",
+			"Enabled": true
+		},
+		{
 			"_comment": "Detection d'activite vocale. C'est lui qui borne les segments de parole du visiteur et signale la fin d'un enonce — l'endpointing est donc deja resolu, et c'est un gain de latence acquis pour le sidecar.",
 			"Name": "RuntimeAudioImporterSileroVAD",
 			"Enabled": true,
