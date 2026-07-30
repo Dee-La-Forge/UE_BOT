@@ -93,20 +93,59 @@ et sans RTX. Sur la borne, ils doivent tous repasser a leur valeur reelle.
 | `LidarPresenceComponent` | `bTracerReleves` | coche | **decoche** |
 | `GuardSessionManager` | `bActiverCapteur` | sans effet ici (pas de COM4) | **coche** |
 
-## Legacy Convai — ce qui reste a retirer DANS L'EDITEUR
+## Legacy Convai — RETIRE le 31/07/2026
 
-Le plugin reste installe pour ses seules animations MetaHuman. Mais des
-restes de son cablage cloud survivent dans des assets binaires, que le
-C++ ne peut pas nettoyer. Trois gestes, releves au journal du 30/07/2026 :
+Le plugin reste installe pour ses seules animations MetaHuman. Son cablage
+cloud, lui, survivait dans des assets binaires que le C++ ne peut pas
+nettoyer. Trois symptomes etaient listes ici ; ils n'avaient que **deux**
+causes, et c'est le diagnostic par script qui l'a etabli.
 
-| Ou | Quoi | Symptome |
+| Symptome | Cause reelle | Etat |
 |---|---|---|
-| `Studio.umap` → World Settings | **GameMode Override** encore sur `ConvaiDemoGM` | `LogLoad: Game class is 'ConvaiDemoGM_C'`, puis `Empty API Key` a chaque lancement. Le remplacant existe : `GardeFrontiereGameMode` (deja pose en `GlobalDefaultGameMode`, mais un override de carte l'emporte) |
-| `BP_ConvaiCharacterBase` → Event BeginPlay | **Cast vers le composant Convai** retire au spawn | « BEGINPLAY CAST FAILED » **affiche a l'ecran** — inacceptable devant du public. Attribue par erreur a `BP_AgentGermain` jusqu'au 31/07/2026 : le texte n'est pas dans son fichier, il est herite du parent |
-| `Studio.umap` | un acteur porte encore un **ConvaiPlayerComponent** | cherche le submix « AudioInput » au demarrage |
+| `LogLoad: Game class is 'ConvaiDemoGM_C'` puis `Empty API Key` | **GameMode Override** de `Studio.umap` | vide — le journal dit desormais `Game class is 'GardeFrontiereGameMode'` |
+| `ConvaiPlayerLog: Found submix "AudioInput"` | **le meme override** : `ConvaiDemoGM` instancie son propre pion, qui porte le `ConvaiPlayerComponent` | disparu avec lui |
+| « BEGINPLAY CAST FAILED » **affiche a l'ecran** | Event Graph de `BP_ConvaiCharacterBase` | vide |
 
-Aucun n'empeche la borne de fonctionner ; tous produisent du bruit, et le
-premier tente de joindre un service resilie.
+> Ce README affirmait qu'« un acteur de la carte porte encore un
+> `ConvaiPlayerComponent` ». C'etait faux : le diagnostic Python a compte
+> **zero** composant Convai sur les 15 acteurs. Le composant naissait du
+> GameMode. Chercher un acteur inexistant aurait pu couter longtemps —
+> l'override, lui, se voyait en une ligne de propriete.
+
+L'override a ete **efface**, pas remplace : `DefaultEngine.ini` porte deja
+`GlobalDefaultGameMode`, et deux sources de verite pour une meme valeur
+finissent toujours par diverger.
+
+Reste au journal `ConvaiSubsystemLog: gRPC Creating Channel` : c'est le
+sous-systeme du plugin qui demarre, inherent au fait de le garder installe.
+Sans cle API et sans composant conversationnel, il ne joint personne. Le
+faire taire voudrait dire desinstaller le plugin, donc perdre les
+animations MetaHuman — voir « Assets migres ».
+
+### Corriger un asset binaire par script
+
+`PythonScriptPlugin` est active dans le `.uproject` (plugin EDITEUR : rien
+n'en part dans un build package). Il rend verifiable ce qui ne l'etait
+pas — un asset binaire peut etre inspecte et corrige de facon
+reproductible, au lieu d'etre decrit de memoire.
+
+```
+UnrealEditor-Cmd.exe unreal\GardeFrontiere.uproject ^
+    -run=pythonscript -script="chemin\script.py" -unattended -nosplash
+```
+
+Deux choses a savoir :
+
+- **Charger la carte d'abord.** En commandlet, aucun monde n'est ouvert :
+  `LevelEditorSubsystem.load_level("/Game/Studio")`.
+- **Le code de sortie 255 n'est pas un echec.** Unreal tente d'« extraire »
+  le fichier du controle de revision, n'y arrive pas, ouvre une boite de
+  dialogue — et sauvegarde quand meme juste apres. Verifier le fichier sur
+  disque, pas le code de retour.
+
+Ce qui reste hors de portee du script : l'edition d'un GRAPHE Blueprint.
+L'API Python sait compiler, reparenter, retirer des variables inutilisees ;
+elle n'expose pas la suppression de noeuds.
 
 ### Le God Blueprint ne se supprime pas — il se vide, et dans cet ordre
 

@@ -16,6 +16,11 @@
 			"Enabled": true
 		},
 		{
+			"_comment": "Plugin EDITEUR (rien n'en part dans un build package). Active le 31/07/2026 pour retirer par script les restes Convai de Studio.umap — l'override de GameMode et un ConvaiPlayerComponent — que le C++ ne peut pas atteindre et qui demandaient jusque-la des clics dans l'editeur. Rend aussi verifiable ce qui ne l'etait pas : un asset binaire peut desormais etre inspecte et corrige de facon reproductible, au lieu d'etre decrit de memoire.",
+			"Name": "PythonScriptPlugin",
+			"Enabled": true
+		},
+		{
 			"_comment": "Conserve pour ses seules animations MetaHuman : AnimBP de corps et de visage, et 16 poses d'emotions. NI visemes NI suivi du regard, contrairement a ce que disait ce commentaire — Convai_MetaHuman_FaceAnim n'expose aucune variable MHF_*, il pilote des courbes CTRL_expressions_* et embarque son propre systeme de visemes, alimente par le ConvaiChatbotComponent qui a ete retire. Le lipsync viendra d'Audio2Face par LiveLink. La couche reseau, elle, est remplacee par le sidecar local.",
 			"Name": "ConvAI",
 			"Enabled": true,
