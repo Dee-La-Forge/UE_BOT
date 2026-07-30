@@ -43,6 +43,46 @@ Seule consequence visible aujourd'hui : le visage garde une expression
 fixe. `OnEmotionChangee` continue d'etre diffuse vers le Blueprint, donc
 une scenographie qui s'y branche fonctionne toujours.
 
+## De quoi est faite l'expression, cote Convai
+
+Inspecte le 30/07/2026 — tout est deja sur la machine, dans le plugin :
+
+```
+Convai/Content/MetaHumans/Emotions/Full_Emotion_spectrum.uasset          11,5 Mo
+Convai/Content/MetaHumans/Emotions/Full_Emotion_NoMouth_spectrum.uasset  11,3 Mo
+Convai/Content/MetaHumans/Animations/Convai_MetaHuman_FaceAnim.uasset     1,8 Mo
+```
+
+Les deux premiers portent les POSES ; l'AnimBP les melange a partir des
+sept variables flottantes. La variante `NoMouth` existe precisement pour
+cohabiter avec un lipsync qui pilote la bouche — c'est celle qu'il faut
+pour l'option 1, sinon les emotions et Audio2Face se disputeraient les
+levres.
+
+**Recette de l'option 1** : ouvrir `Convai_MetaHuman_FaceAnim` pour voir
+comment il branche `Full_Emotion_spectrum` sur les sept flottants, puis
+reproduire ce montage dans `Face_AnimBP` a cote du noeud
+`ApplyACEAnimation`, en prenant la variante `NoMouth`.
+
+### Un piege de version a connaitre
+
+Le plugin Convai existe en deux versions sur cette machine :
+
+| Emplacement | Version | `FaceAnim` |
+|---|---|---|
+| Moteur (`Engine/Plugins/Marketplace/Convai`) | **3.3.2** (08/2025) | 1867 Ko |
+| Build « validee par Didier » (archive) | **3.6.9** (03/2026) | 1873 Ko |
+
+Le reste du contenu est identique au fichier pres (242 animations,
+2 emotions, memes tailles) : seul l'AnimBP differe. `AgentFaceComponent`
+ecrit sept variables et le journal n'en signale que deux absentes avec la
+version du moteur — `Neutral` et `Bored`. Elles vivent donc tres
+probablement dans la 3.6.9, contre laquelle le code a ete ecrit.
+
+Sans consequence tant qu'on reste sur `Face_AnimBP` (aucune des sept n'y
+existe). Mais quiconque revient a l'AnimBP de Convai doit savoir qu'il
+lui faut la **3.6.9**, pas celle du moteur.
+
 ## Les trois issues
 
 1. **Ajouter les sept variables a Face_AnimBP** (travail Blueprint : les
