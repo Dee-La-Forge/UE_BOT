@@ -59,20 +59,31 @@ class Transcripteur:
 
         # Meme philosophie au DEMARRAGE qu'a l'execution : « une borne lente
         # vaut mieux qu'une borne sourde ». Un poste sans pile CUDA complete
-        # (cuBLAS/cuDNN manquants — cas reel d'une reinstallation) plantait
-        # ici au lieu de demarrer sur CPU.
+        # (cuBLAS/cuDNN manquants) plantait ici au lieu de demarrer sur CPU.
+        # Et deux crans avant d'abandonner le GPU : le type de calcul peut
+        # etre le seul probleme — float16 exige Turing ou plus recent, un
+        # GPU Pascal (GTX 1060 releve sur le poste de dev) le refuse alors
+        # qu'int8 y tourne tres bien, six fois plus vite que le CPU.
         try:
             self._modele = self._charger()
         except Exception:
             if self._peripherique == "cpu":
                 raise
-            _log.exception(
-                "chargement STT impossible sur %s — demarrage sur CPU",
-                self._peripherique,
-            )
-            self._peripherique = "cpu"
-            self._type_calcul = "int8"
-            self._modele = self._charger()
+            try:
+                _log.warning(
+                    "STT %s/%s refuse — nouvel essai en int8 sur %s",
+                    self._nom, self._type_calcul, self._peripherique,
+                )
+                self._type_calcul = "int8"
+                self._modele = self._charger()
+            except Exception:
+                _log.exception(
+                    "chargement STT impossible sur %s — demarrage sur CPU",
+                    self._peripherique,
+                )
+                self._peripherique = "cpu"
+                self._type_calcul = "int8"
+                self._modele = self._charger()
 
     def _charger(self) -> WhisperModel:
         return WhisperModel(
