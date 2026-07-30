@@ -93,6 +93,21 @@ et sans RTX. Sur la borne, ils doivent tous repasser a leur valeur reelle.
 | `LidarPresenceComponent` | `bTracerReleves` | coche | **decoche** |
 | `GuardSessionManager` | `bActiverCapteur` | sans effet ici (pas de COM4) | **coche** |
 
+## Legacy Convai — ce qui reste a retirer DANS L'EDITEUR
+
+Le plugin reste installe pour ses seules animations MetaHuman. Mais des
+restes de son cablage cloud survivent dans des assets binaires, que le
+C++ ne peut pas nettoyer. Trois gestes, releves au journal du 30/07/2026 :
+
+| Ou | Quoi | Symptome |
+|---|---|---|
+| `Studio.umap` → World Settings | **GameMode Override** encore sur `ConvaiDemoGM` | `LogLoad: Game class is 'ConvaiDemoGM_C'`, puis `Empty API Key` a chaque lancement. Le remplacant existe : `GardeFrontiereGameMode` (deja pose en `GlobalDefaultGameMode`, mais un override de carte l'emporte) |
+| `BP_AgentGermain` → Event BeginPlay | **Cast vers le composant Convai** retire au spawn | « BEGINPLAY CAST FAILED » **affiche a l'ecran** — inacceptable devant du public |
+| `Studio.umap` | un acteur porte encore un **ConvaiPlayerComponent** | cherche le submix « AudioInput » au demarrage |
+
+Aucun n'empeche la borne de fonctionner ; tous produisent du bruit, et le
+premier tente de joindre un service resilie.
+
 ## Reste a faire
 
 - [x] ~~Trancher : emotions ou lipsync ?~~ **Les deux** : l'emotion du LLM
