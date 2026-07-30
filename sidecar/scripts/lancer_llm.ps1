@@ -40,11 +40,14 @@ Write-Host "`n  Modele   : $Modele" -ForegroundColor Cyan
 Write-Host "  Ecoute   : http://127.0.0.1:$Port" -ForegroundColor Cyan
 Write-Host "  Contexte : $Contexte tokens`n" -ForegroundColor Cyan
 
+# --flash-attn exige une valeur depuis les builds recents de llama.cpp
+# (le drapeau nu avalait l'argument suivant et refusait de demarrer —
+# constate avec le b10152 qu'epingle telecharger.sh).
 & $serveur `
     --model $poids `
     --host 127.0.0.1 `
     --port $Port `
     --ctx-size $Contexte `
     --n-gpu-layers $CouchesGpu `
-    --flash-attn `
+    --flash-attn on `
     --cont-batching

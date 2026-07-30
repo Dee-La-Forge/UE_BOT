@@ -56,7 +56,23 @@ class Transcripteur:
         # on repart a neuf ; l'epoque empeche le naufrage de recharger son
         # vieux monde par-dessus le nouveau quand il finit par se reveiller.
         self._epoque = 0
-        self._modele = self._charger()
+
+        # Meme philosophie au DEMARRAGE qu'a l'execution : « une borne lente
+        # vaut mieux qu'une borne sourde ». Un poste sans pile CUDA complete
+        # (cuBLAS/cuDNN manquants — cas reel d'une reinstallation) plantait
+        # ici au lieu de demarrer sur CPU.
+        try:
+            self._modele = self._charger()
+        except Exception:
+            if self._peripherique == "cpu":
+                raise
+            _log.exception(
+                "chargement STT impossible sur %s — demarrage sur CPU",
+                self._peripherique,
+            )
+            self._peripherique = "cpu"
+            self._type_calcul = "int8"
+            self._modele = self._charger()
 
     def _charger(self) -> WhisperModel:
         return WhisperModel(
