@@ -16,6 +16,7 @@ inutilisable.
 from __future__ import annotations
 
 import logging
+import threading
 
 import numpy as np
 from faster_whisper import WhisperModel
@@ -41,6 +42,15 @@ class Transcripteur:
         # rechargement CUDA reussi (plusieurs secondes), echec au tour
         # suivant — et la bascule CPU promise n'arrivait jamais.
         self._echecs_inference = 0
+        # Un seul acces natif a la fois. Le wait_for du pipeline abandonne
+        # l'ATTENTE, pas le thread : apres un depassement de delai, le thread
+        # abandonne est peut-etre encore dans transcribe() ou en plein
+        # rechargement de self._modele. Sans ce verrou, le tour suivant
+        # lancait une seconde inference sur le meme modele pendant que le
+        # premier thread le remplacait et liberait l'ancien — use-after-free
+        # dans ctranslate2, crash dur du sidecar. Le thread suivant attend
+        # ici ; s'il attend trop, c'est le wait_for d'au-dessus qui tranche.
+        self._verrou = threading.Lock()
         self._modele = self._charger()
 
     def _charger(self) -> WhisperModel:
@@ -99,6 +109,10 @@ class Transcripteur:
         if audio.dtype != np.float32:
             audio = audio.astype(np.float32)
 
+        with self._verrou:
+            return self._transcrire_verrouille(audio, taux)
+
+    def _transcrire_verrouille(self, audio: np.ndarray, taux: int) -> str:
         if taux != 16000:
             # Reechantillonnage lineaire : suffisant ici, la qualite du
             # signal micro est le facteur limitant, pas l'interpolation.

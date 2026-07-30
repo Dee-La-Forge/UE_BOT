@@ -370,15 +370,24 @@ void AGuardSessionManager::TransmettreParoleVisiteur(
 	const double Maintenant = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.0;
 	if (AgentAudible())
 	{
-		InstantAgentAudible = Maintenant;
+		// Le segment peut aussi etre une VRAIE reponse donnee pendant la
+		// queue de lecture : on la perd (pas de mise en attente ici), mais
+		// on ne la punit pas — l'abandon est repousse, le visiteur s'est
+		// manifeste. Sans cela, un visiteur dont les reponses tombaient
+		// dans les fenetres sourdes etait abandonne a 30 s en pleine
+		// conversation. (InstantAgentAudible n'est PLUS estampille ici :
+		// c'est le suivi de lecture qui fait foi, et l'estampille sur rejet
+		// repoussait la marge devant un visiteur qui reessayait.)
+		ArmerAbandon();
 		UE_LOG(LogGardeFrontiere, Log,
 			TEXT("Segment micro ignore : l'agent parle encore — echo probable"));
 		return;
 	}
 	if (Maintenant - InstantAgentAudible < MargeEchoApresReplique)
 	{
+		ArmerAbandon();
 		UE_LOG(LogGardeFrontiere, Log,
-			TEXT("Segment micro ignore : replique finie il y a moins de %.1f s"),
+			TEXT("Segment micro ignore : lecture finie il y a moins de %.1f s"),
 			MargeEchoApresReplique);
 		return;
 	}
@@ -435,6 +444,27 @@ void AGuardSessionManager::TransmettreParoleVisiteur(
 			InstantDernierRepetez = Maintenant;
 			OnRepliqueDeSecours.Broadcast(TEXT("Repetez."));
 		}
+	}
+}
+
+void AGuardSessionManager::SurSuiviLecture()
+{
+	UWorld* Monde = GetWorld();
+	if (!Monde)
+	{
+		return;
+	}
+
+	if (AgentAudible())
+	{
+		// La lecture court encore : la marge anti-echo repart d'ici.
+		InstantAgentAudible = Monde->GetTimeSeconds();
+	}
+	else
+	{
+		// Fin reelle du son : la derniere estampille fait desormais foi,
+		// le sondage n'a plus rien a suivre.
+		Monde->GetTimerManager().ClearTimer(MinuterieSuiviLecture);
 	}
 }
 
@@ -526,14 +556,7 @@ void AGuardSessionManager::TerminerSession(EGuardFinDeSession Raison)
 	const bool bZoneVide = !Presence || !Presence->bPresent;
 	if (bZoneVide)
 	{
-		if (Glitch)
-		{
-			Glitch->Declencher();   // la permutation suivra OnGlitchTermine
-		}
-		else if (Avatars)
-		{
-			Avatars->Permuter();
-		}
+		LancerSubstitution();
 	}
 	else
 	{
@@ -547,6 +570,18 @@ void AGuardSessionManager::TerminerSession(EGuardFinDeSession Raison)
 				MinuterieReprise, this, &AGuardSessionManager::SurReprisePresence,
 				FMath::Max(DelaiReprisePresence, 1.f), false);
 		}
+	}
+}
+
+void AGuardSessionManager::LancerSubstitution()
+{
+	if (Glitch)
+	{
+		Glitch->Declencher();   // la permutation suivra OnGlitchTermine
+	}
+	else if (Avatars)
+	{
+		Avatars->Permuter();
 	}
 }
 
@@ -587,14 +622,7 @@ void AGuardSessionManager::SurPresencePerdue()
 			{
 				Monde->GetTimerManager().ClearTimer(MinuterieReprise);
 			}
-			if (Glitch)
-			{
-				Glitch->Declencher();
-			}
-			else if (Avatars)
-			{
-				Avatars->Permuter();
-			}
+			LancerSubstitution();
 		}
 		return;
 	}
@@ -838,12 +866,17 @@ void AGuardSessionManager::SurParoleFin()
 	bRepliqueEnCours = false;
 	FermerSessionA2F();
 
-	// Point de depart de la marge anti-echo : la lecture peut continuer
-	// apres ce parole.fin, AgentAudible() la couvre, mais il faut une
-	// origine pour la marge une fois la lecture finie.
+	// La lecture continue apres ce parole.fin (tampon ACE, parfois
+	// plusieurs secondes) sans aucun evenement de fin : on la SUIT par
+	// sondage, pour que la marge anti-echo parte de la fin reelle du son
+	// et non du parole.fin. Une marge assise sur parole.fin laissait
+	// passer tout echo clos apres la fin de lecture.
 	if (UWorld* Monde = GetWorld())
 	{
 		InstantAgentAudible = Monde->GetTimeSeconds();
+		Monde->GetTimerManager().SetTimer(
+			MinuterieSuiviLecture, this, &AGuardSessionManager::SurSuiviLecture,
+			0.2f, true);
 	}
 
 	ArmerAbandon();
@@ -940,6 +973,14 @@ void AGuardSessionManager::SurPanneIA(const FString& Raison)
 {
 	bIADisponible = false;
 	UE_LOG(LogGardeFrontiere, Error, TEXT("IA indisponible : %s"), *Raison);
+
+	// Le flux est mort avec le sidecar : le parole.fin de la replique en
+	// cours ne viendra jamais. Sans cette remise a zero, bRepliqueEnCours
+	// restait verrouille a vrai et AgentAudible() rendait le micro sourd
+	// jusqu'a l'abandon — un mode de panne que le garde anti-echo avait
+	// lui-meme introduit.
+	bRepliqueEnCours = false;
+	FermerSessionA2F();
 
 	// Une borne muette avec un visiteur planté devant est le seul echec
 	// vraiment couteux. On parle, meme mal — mais UNE fois par session :
@@ -1055,6 +1096,12 @@ void AGuardSessionManager::AnnulerMinuteries()
 		T.ClearTimer(MinuterieSortie);
 		T.ClearTimer(MinuterieSurveillanceIA);
 		T.ClearTimer(MinuterieRelance);
+		T.ClearTimer(MinuterieSuiviLecture);
+
+		// MinuterieReprise aussi : TerminerSession la REARME apres cet
+		// appel si la zone est encore occupee — l'effacer d'abord evite
+		// qu'une reprise armee par une session precedente survive.
+		T.ClearTimer(MinuterieReprise);
 
 		// PAS MinuterieReconnexion : elle n'appartient pas a la session.
 		// L'effacer ici tuait la boucle de reconnexion pour de bon — la

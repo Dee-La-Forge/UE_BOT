@@ -108,7 +108,7 @@ bench/
   client_test.py         simule Unreal, session complete
   generer_echantillons.py
   test_machine_etats.py  17 verifications      (sans modele)
-  test_decoupage.py       7 cas — le VRAI ClientLLM.phrases (sans modele)
+  test_decoupage.py       8 cas — le VRAI ClientLLM.phrases (sans modele)
   test_serveur.py         6 cas — sessions, verrous, connexions (sans modele)
   test_texte.py          14 cas                (sans modele)
 scripts/setup.ps1, lancer_llm.ps1, telecharger.sh

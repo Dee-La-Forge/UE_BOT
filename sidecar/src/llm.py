@@ -137,6 +137,19 @@ class ClientLLM:
                             avant, _, _ = morceau.partition("[")
                             tampon += avant
                             dans_les_tags = True
+
+                            # Le texte parle est COMPLET : la derniere
+                            # phrase part maintenant. Les grammaires collent
+                            # [EMOTION: a la ponctuation, sans espace — or
+                            # _FIN_DE_PHRASE exige un espace : sans cette
+                            # purge, la derniere (souvent seule) phrase
+                            # attendait la fin de la generation des tags, et
+                            # le TTS ne recouvrait plus rien — regression
+                            # silencieuse du premier son sur chaque tour a
+                            # une phrase.
+                            if (phrase := tampon.strip()):
+                                yield phrase, None
+                            tampon = ""
                         else:
                             tampon += morceau
 

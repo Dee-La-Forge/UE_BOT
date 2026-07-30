@@ -210,18 +210,24 @@ public:
 	float DelaiReconnexion = 5.f;
 
 	/**
-	 * Marge apres la fin de la replique pendant laquelle le micro reste sourd.
+	 * Marge apres la fin de la lecture pendant laquelle le micro reste sourd.
 	 *
 	 * La borne ne doit pas s'entendre elle-meme : a volume d'exposition, la
 	 * voix TTS captee par le micro est segmentee par Silero comme n'importe
 	 * quelle parole, et chaque replique de l'agent repartait au sidecar comme
 	 * « reponse » du visiteur — l'interrogatoire pouvait avancer tout seul.
 	 * Les segments clos pendant que l'agent est audible sont jetes ; cette
-	 * marge couvre en plus la reverberation de la salle apres la lecture.
+	 * marge court a partir de la fin REELLE de la lecture (suivie par
+	 * MinuterieSuiviLecture, ACE jouant son tampon bien apres parole.fin).
+	 *
+	 * Elle doit rester SUPERIEURE a SilenceFinSegment du micro (0,9 s) : le
+	 * VAD ne clot un segment d'echo que ce delai apres le dernier son, et
+	 * une marge plus courte — 0,4 s au depart — laissait passer le segment
+	 * d'echo lui-meme, le bug exact qu'elle pretendait corriger.
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Garde Frontiere|Delais",
 		meta = (ClampMin = "0.0", Units = "s"))
-	float MargeEchoApresReplique = 0.4f;
+	float MargeEchoApresReplique = 1.2f;
 
 	/**
 	 * Delai avant de rouvrir une session quand la zone est restee occupee.
@@ -474,6 +480,12 @@ private:
 	// Nouvelle session si la zone est restee occupee au retour en veille.
 	UFUNCTION() void SurReprisePresence();
 
+	// Suit la fin REELLE de la lecture apres parole.fin (tampon ACE).
+	UFUNCTION() void SurSuiviLecture();
+
+	/** Glitch puis permutation — ou permutation directe sans effet. */
+	void LancerSubstitution();
+
 	/**
 	 * L'agent est-il audible en ce moment ?
 	 *
@@ -492,6 +504,16 @@ private:
 	FTimerHandle MinuterieReprise;
 
 	/**
+	 * Sonde la lecture apres parole.fin, tant que l'agent reste audible.
+	 *
+	 * parole.fin clot le FLUX, pas la LECTURE : ACE joue son tampon parfois
+	 * plusieurs secondes apres, sans aucun evenement de fin. Sans ce suivi,
+	 * la marge anti-echo partait de parole.fin, et un echo clos apres la
+	 * vraie fin de lecture passait toujours au travers.
+	 */
+	FTimerHandle MinuterieSuiviLecture;
+
+	/**
 	 * Une relance a deja ete faite pour le silence en cours.
 	 *
 	 * Remise a faux quand le visiteur parle. Sans ce garde, la relance
@@ -502,11 +524,13 @@ private:
 	bool bRelanceFaite = false;
 
 	/**
-	 * La panne IA a deja ete annoncee au visiteur de cette session.
+	 * La panne IA en cours a deja ete annoncee au visiteur.
 	 *
 	 * SurPanneIA repasse a chaque echec de reconnexion (toutes les
 	 * DelaiReconnexion secondes) : sans ce garde, l'agent repetait « Poste
 	 * ferme. Repassez plus tard. » en boucle devant le meme visiteur.
+	 * Une par PANNE, pas par session : rearme quand le sidecar repond a
+	 * nouveau (SurParoleDebut), et au demarrage de session.
 	 */
 	bool bPanneAnnoncee = false;
 

@@ -19,7 +19,11 @@ piper-tts==1.6.0
 httpx==0.27.2
 
 # --- Transport vers Unreal ---
-websockets==13.1
+# 15.0.1 : c'est la version REELLEMENT installee et testee sur la machine
+# (l'epingle 13.1 n'etait appliquee nulle part — pas de venv). La gestion
+# des connexions du serveur (remplacement, messages tamponnes d'une socket
+# morte) a change entre 13 et 14 : l'epingle doit suivre ce qui tourne.
+websockets==15.0.1
 
 # --- Utilitaires ---
 pyyaml==6.0.2

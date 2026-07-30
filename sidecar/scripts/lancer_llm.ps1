@@ -27,12 +27,12 @@ $poids   = Join-Path $racine "models\llm\$Modele"
 
 if (-not (Test-Path $serveur)) {
     Write-Host "llama-server.exe introuvable : $serveur" -ForegroundColor Red
-    Write-Host "Voir scripts\setup.ps1, etape 4." -ForegroundColor Yellow
+    Write-Host "Lancer scripts/telecharger.sh (Git Bash)." -ForegroundColor Yellow
     exit 1
 }
 if (-not (Test-Path $poids)) {
     Write-Host "Modele introuvable : $poids" -ForegroundColor Red
-    Write-Host "Voir scripts\setup.ps1, etape 3." -ForegroundColor Yellow
+    Write-Host "Lancer scripts/telecharger.sh (Git Bash)." -ForegroundColor Yellow
     exit 1
 }
 

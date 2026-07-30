@@ -56,6 +56,12 @@ class Serveur:
 
         self._tache_intro: asyncio.Task | None = None
 
+        # Une seule relance a la fois : Unreal n'en envoie qu'une par
+        # silence, mais une socket capricieuse ne doit pas pouvoir en
+        # empiler. Suivie a part des tours pour que la borne de file
+        # distingue « l'agent relance » d'« un enonce attend ».
+        self._tache_relance: asyncio.Task | None = None
+
         # La connexion Unreal courante. Une seule compte : quand Unreal
         # redemarre (arret de PIE, crash), la nouvelle socket s'etablit
         # parfois AVANT que l'ancienne ne meure (timeout TCP). Sans ce
@@ -91,7 +97,16 @@ class Serveur:
 
     async def _dire(self, ws: ServerConnection, texte: str,
                     emotion: str = "Neutral") -> None:
-        """Synthetise et streame une replique complete, hors pipeline LLM."""
+        """Synthetise et streame une replique complete, hors pipeline LLM.
+
+        Garantit qu'un parole.debut emis ici recoit TOUJOURS son parole.fin,
+        panne ou annulation comprises : la synthese — le seul etage qui peut
+        vraiment echouer — est faite AVANT le premier envoi, et la cloture
+        vit dans un finally, que meme un CancelledError (BaseException, qui
+        contournait le except de _jouer_flux) ne saute pas. Sans cela, un
+        echec entre debut et fin laissait deux repliques ouvertes cote
+        Unreal — et bRepliqueEnCours verrouille a vrai, micro sourd.
+        """
         # to_thread : Piper est synchrone, et le laisser dans l'event loop
         # rendrait le sidecar sourd pendant la synthese. Borne comme les
         # etages du pipeline : un Piper fige ne doit pas gober le verrou.
@@ -100,13 +115,18 @@ class Serveur:
             timeout=DELAI_TTS,
         )
         await self._envoyer(ws, "parole.debut", texte=texte, emotion=emotion)
-        await self._envoyer_audio(
-            ws,
-            MorceauAudio(pcm=parole.pcm, taux=parole.taux, texte=texte,
-                         premier=True),
-            seq=0,
-        )
-        await self._envoyer(ws, "parole.fin")
+        try:
+            await self._envoyer_audio(
+                ws,
+                MorceauAudio(pcm=parole.pcm, taux=parole.taux, texte=texte,
+                             premier=True),
+                seq=0,
+            )
+        finally:
+            try:
+                await self._envoyer(ws, "parole.fin")
+            except websockets.ConnectionClosed:
+                pass   # socket morte : Unreal fera son propre menage
 
     async def _replique_de_repli(self, ws: ServerConnection, cle: str) -> None:
         """Fait parler l'agent malgre une panne, plutot que de le laisser muet."""
@@ -142,19 +162,35 @@ class Serveur:
         self._taches_parole.discard(tache)
         if self._tache_intro is tache:
             self._tache_intro = None
+        if self._tache_relance is tache:
+            self._tache_relance = None
         if not tache.cancelled() and tache.exception() is not None:
             _log.error("tache de parole tombee : %r", tache.exception())
 
+    def _paroles_en_vie(self) -> int:
+        """Tout ce qui tient ou attend le verrou de parole.
+
+        L'intro et la relance comptent : la borne « un qui joue + un qui
+        attend » ne comptait d'abord que les tours, et deux segments d'echo
+        pouvaient s'empiler derriere l'intro — la replique la plus longue —
+        exactement la spirale que la borne devait empecher.
+        """
+        n = sum(1 for t in self._taches_parole if not t.done())
+        for t in (self._tache_intro, self._tache_relance):
+            if t is not None and not t.done():
+                n += 1
+        return n
+
     def _lancer_tour(self, ws: ServerConnection, brut: bytes) -> None:
         """Traite un enonce en tache, pour que la reception reste libre."""
-        # Au plus un tour qui joue et un tour qui attend. Sans cette borne,
-        # chaque enonce s'empilait sur le verrou de parole : un visiteur qui
-        # parle deux fois pendant une longue replique (echo du haut-parleur,
-        # vrai bavard) recevait des reponses a des enonces vieux de 10-20 s,
-        # et le compteur de questions avancait d'autant — spirale de latence
-        # garantie sur une borne bruyante.
-        en_vie = sum(1 for t in self._taches_parole if not t.done())
-        if en_vie >= 2:
+        # Au plus une parole qui joue et une qui attend — intro et relance
+        # comprises. Sans cette borne, chaque enonce s'empilait sur le verrou
+        # de parole : un visiteur qui parle deux fois pendant une longue
+        # replique (echo du haut-parleur, vrai bavard) recevait des reponses
+        # a des enonces vieux de 10-20 s, et le compteur de questions
+        # avancait d'autant — spirale de latence garantie sur une borne
+        # bruyante.
+        if self._paroles_en_vie() >= 2:
             _log.warning("tour deja en attente — enonce ignore")
             return
         tache = asyncio.create_task(self._traiter_audio(ws, brut))
@@ -162,11 +198,12 @@ class Serveur:
         tache.add_done_callback(self._retirer_tache)
 
     def _annuler_paroles(self) -> None:
-        """Coupe l'intro ET les tours en cours — le visiteur est parti."""
-        tache = getattr(self, "_tache_intro", None)
-        if tache is not None and not tache.done():
-            tache.cancel()
-        self._tache_intro = None
+        """Coupe l'intro, la relance ET les tours — le visiteur est parti."""
+        for attribut in ("_tache_intro", "_tache_relance"):
+            tache = getattr(self, attribut, None)
+            if tache is not None and not tache.done():
+                tache.cancel()
+            setattr(self, attribut, None)
 
         for tour in list(self._taches_parole):
             if not tour.done():
@@ -215,6 +252,7 @@ class Serveur:
         """
         seq = 0
         a_parle = False
+        fin_envoyee = False
 
         try:
             async for element in flux:
@@ -226,11 +264,15 @@ class Serveur:
                     await self._envoyer_audio(ws, element, seq)
                     seq += 1
                 else:
-                    if a_parle:
+                    if a_parle and not fin_envoyee:
                         await self._envoyer(ws, "parole.fin")
+                        fin_envoyee = True
                     elif element.texte:
+                        # _dire garantit lui-meme debut ET fin, panne
+                        # comprise — inutile (et faux) de re-clore ici.
                         await self._dire(ws, element.texte, element.emotion)
                         a_parle = True
+                        fin_envoyee = True
                     await self._conclure(ws, element)
 
         except Exception:
@@ -238,7 +280,9 @@ class Serveur:
             # Unreal voyait arriver le parole.debut du repli sans jamais la
             # fin de la replique en cours — deux repliques ouvertes a la
             # fois, exactement les deux voix superposees qu'on a chassees.
-            if a_parle:
+            # `fin_envoyee` evite l'exces inverse : une panne APRES la
+            # cloture (dans _conclure) ne doit pas envoyer un second fin.
+            if a_parle and not fin_envoyee:
                 try:
                     await self._envoyer(ws, "parole.fin")
                 except websockets.ConnectionClosed:
@@ -383,13 +427,30 @@ class Serveur:
             # pas dans son finally, qui peut arriver de longues secondes
             # plus tard (timeout TCP) et aurait sinon detruit la session
             # que la nouvelle connexion vient d'ouvrir.
+            #
+            # La fermeture part en tache, JAMAIS attendue : un pair a
+            # moitie mort (processus Unreal gele, socket ouverte) retient
+            # close() pendant tout le close_timeout — 10 s pendant
+            # lesquelles le presence.detectee de la nouvelle connexion
+            # attendait en file, et le watchdog d'Unreal declarait le
+            # sidecar mort. Rien ici ne depend de la fin de cette fermeture.
             _log.warning("nouvelle connexion : l'ancienne est remplacee")
             self._liberer_session()
-            await ancienne.close()
+            fermeture = asyncio.create_task(ancienne.close())
+            fermeture.add_done_callback(
+                lambda t: t.cancelled() or t.exception())
 
         _log.info("Unreal connecte")
         try:
             async for message in ws:
+                # Une socket remplacee peut encore livrer des messages
+                # tamponnes (ou reprendre la main au milieu d'un await) :
+                # plus un seul ne doit toucher la session, qui appartient
+                # desormais a la nouvelle connexion.
+                if self._ws_actif is not ws:
+                    _log.info("message d'une connexion remplacee — ignore")
+                    break
+
                 if isinstance(message, bytes):
                     # Hors session, un enonce n'a pas de destinataire : c'est
                     # un segment VAD parti apres presence.perdue (le visiteur
@@ -437,6 +498,13 @@ class Serveur:
                 _log.warning("presence signalee alors qu'une session court deja")
                 return
             await self._occupe.acquire()
+            # La connexion a pu etre remplacee PENDANT l'attente du verrou :
+            # ce handler ne represente plus personne, et garder le verrou
+            # ici le faisait fuir — plus aucune session ne demarrait ensuite.
+            if self._ws_actif is not ws:
+                self._occupe.release()
+                _log.warning("presence d'une connexion remplacee — ignoree")
+                return
             # Ceinture et bretelles : si un tour d'une session precedente
             # traine encore (il sera de toute facon ignore par ses propres
             # gardes), on le coupe avant d'ouvrir la session neuve.
@@ -459,9 +527,11 @@ class Serveur:
             if not self._occupe.locked():
                 _log.warning("silence signale hors session — ignore")
                 return
-            tache = asyncio.create_task(self._traiter_silence(ws))
-            self._taches_parole.add(tache)
-            tache.add_done_callback(self._retirer_tache)
+            if self._tache_relance is not None and not self._tache_relance.done():
+                _log.warning("relance deja en cours — ignoree")
+                return
+            self._tache_relance = asyncio.create_task(self._traiter_silence(ws))
+            self._tache_relance.add_done_callback(self._retirer_tache)
 
         elif evenement in ("presence.perdue", "session.reset"):
             # Le visiteur part : on coupe l'intro ET le tour en cours plutot

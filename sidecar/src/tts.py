@@ -70,12 +70,13 @@ class Synthetiseur:
                 f"Voix Piper introuvable : {modele}\n"
                 f"Lancer scripts/telecharger.sh pour recuperer les modeles."
             )
-        # Les alignements ne servent qu'au lipsync de repli. Les activer
-        # patche le modele ONNX en memoire au chargement (necessite le paquet
-        # `onnx`) : le cout est paye une fois au demarrage, pas a chaque
-        # phrase. Sans ce drapeau ici, `synthesize(include_alignments=True)`
-        # reste sans effet — le patch se decide au load, pas a l'appel.
-        self._alignements = bool(config.get("phonemes_pour_repli", True))
+        # Les alignements ne servent qu'au lipsync de repli — chemin
+        # SUPPRIME (le lipsync vient d'Audio2Face, cote Unreal). Les activer
+        # patche le modele ONNX en memoire au chargement et exige le paquet
+        # `onnx`, absent de requirements.txt : le defaut d'une
+        # fonctionnalite retiree est False, sinon toute config sans la cle
+        # (gabarit d'une seconde borne) replantait le sidecar au demarrage.
+        self._alignements = bool(config.get("phonemes_pour_repli", False))
 
         self._voix = PiperVoice.load(str(modele), include_alignments=self._alignements)
         self.taux = self._voix.config.sample_rate

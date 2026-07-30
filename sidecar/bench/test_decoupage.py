@@ -99,13 +99,24 @@ CAS = [
         1, "Neutral", "EN_COURS",
     ),
     (
+        # Les grammaires collent [EMOTION: a la ponctuation, sans espace :
+        # les jetons de test doivent faire pareil, sinon ils testent un flux
+        # que le modele ne produit jamais — c'est ainsi qu'une retention de
+        # la derniere phrase est passee sous les radars.
+        "phrase unique collee aux tags — emise des le crochet",
+        ["Ou", " allez", "-vous", " ?", "[EMOTION:Stare][VERDICT:EN_COURS]"],
+        1, "Stare", "EN_COURS",
+    ),
+    (
         "decimale : « 2.5 » ne doit pas couper la phrase",
-        ["Vous", " restez", " 2", ".", "5", " jours", " ?", " Repondez", ".", " "],
-        2, "Neutral", "EN_COURS",
+        ["Vous", " restez", " 2", ".", "5", " jours", " ?", " Repondez", ".",
+         "[EMOTION:Concerned][VERDICT:EN_COURS]"],
+        2, "Concerned", "EN_COURS",
     ),
     (
         "civilite : « M. Dupont » ne doit pas couper la phrase",
-        ["Vos", " papiers", ",", " M", ".", " Dupont", ".", " "],
+        ["Vos", " papiers", ",", " M", ".", " Dupont", ".",
+         "[EMOTION:Neutral][VERDICT:EN_COURS]"],
         1, "Neutral", "EN_COURS",
     ),
 ]
