@@ -6,10 +6,32 @@ saura pas quel maillon coute reellement, et on optimisera au hasard.
 
 from __future__ import annotations
 
+import functools
 import json
+import subprocess
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
+
+
+@functools.lru_cache(maxsize=1)
+def gpu() -> str:
+    """Nom du GPU, releve une seule fois.
+
+    Sans lui, latence.jsonl melange les releves de machines differentes
+    sans que rien ne le signale — et une serie prise sur une GTX 1060
+    devient indiscernable des 694 ms de la borne (RTX 3090 Ti). Le
+    fichier est la reference de comparaison du projet : il doit dire sur
+    quoi il a mesure.
+    """
+    try:
+        r = subprocess.run(
+            ["nvidia-smi", "--query-gpu=name", "--format=csv,noheader"],
+            capture_output=True, text=True, timeout=5, check=True,
+        )
+        return r.stdout.strip().splitlines()[0].strip()
+    except Exception:
+        return "inconnu"
 
 
 @dataclass
@@ -53,6 +75,7 @@ class Mesure:
         chemin.parent.mkdir(parents=True, exist_ok=True)
         ligne = {
             "horodatage": time.strftime("%Y-%m-%dT%H:%M:%S"),
+            "gpu": gpu(),
             "marques_ms": self._marques,
             "resume_ms": self.resume(),
         }
