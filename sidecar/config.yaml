@@ -114,9 +114,16 @@ tts:
   volume: 1.0
 
   # --- Chatterbox ---
-  # WAV d'une dizaine de secondes : la voix que prendra l'agent. Retirer
-  # la cle pour la voix par defaut du modele. Chemin relatif = depuis
-  # sidecar/.
+  # WAV d'une dizaine de secondes : la voix que prendra l'agent.
+  #
+  # C'EST LUI QUI FAIT TOUT. Essai du 30/07/2026 : les voix generiques
+  # des modeles sont inutilisables (accent americain pour la turbo,
+  # canadien pour la multilingue) ; clonees sur un echantillon humain,
+  # elles sont jugees « parfaites ». L'humanite vient de l'echantillon,
+  # pas du moteur.
+  #
+  # Les echantillons ne sont PAS versionnes (voir .gitignore) : ce sont
+  # des enregistrements de personnes, et le depot est public.
   # echantillon_voix: "voix/garde.wav"
   #
   # 0 = diction neutre. Monter donne un jeu plus appuye — un

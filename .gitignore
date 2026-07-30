@@ -80,6 +80,18 @@ tools/
 *.key
 secrets.json
 
+# ---------- Voix de reference (clonage) ----------
+#
+# JAMAIS versionne, et ce n'est pas une question de poids : ce sont des
+# ENREGISTREMENTS DE PERSONNES. Le depot est public — une voix publiee
+# ici serait telechargeable par quiconque, et clonable avec les memes
+# outils que ceux du projet. Les echantillons vivent sur la machine, et
+# nulle part ailleurs.
+sidecar/voix/
+
+# Essais de synthese : regeneres a la demande, aucun interet a les garder.
+sidecar/*.wav
+
 # ---------- Logs & mesures ----------
 logs/
 *.log
