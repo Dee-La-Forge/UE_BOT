@@ -178,9 +178,15 @@ AActor* UAvatarSwitcherComponent::Spawner(int32 Index)
 	// La capture micro ne demarre qu'a la frame suivante — 40 ms apres le
 	// spawn dans les traces. Detruire le composant ici, dans la meme pile
 	// d'appels, la devance.
-	// Filet de securite pour les avatars qui descendraient encore du God
-	// Blueprint. BP_AgentGermain, lui, a ete reparente sur Character : il
-	// n'apporte plus rien a retirer, et c'est tant mieux.
+	// Ce retrait n'est PAS un filet de securite : il est sur le chemin
+	// nominal. Verifie le 31/07/2026 en lisant les tags d'AssetRegistry des
+	// .uasset — BP_AgentGermain a pour ParentClass BP_ConvaiCharacterBase_C,
+	// et pour NativeParentClass Character. Le reparentage annonce par une
+	// version anterieure de ce commentaire n'a jamais eu lieu.
+	//
+	// Tant que la chaine d'heritage est celle-la, tout avatar spawne herite
+	// du cablage Convai du God Blueprint. Retirer cet appel rend le micro a
+	// un composant qui parle au cloud.
 	if (bRetirerConvaiConversationnel)
 	{
 		RetirerConvaiConversationnel(Nouveau);

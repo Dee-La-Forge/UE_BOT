@@ -108,6 +108,39 @@ C++ ne peut pas nettoyer. Trois gestes, releves au journal du 30/07/2026 :
 Aucun n'empeche la borne de fonctionner ; tous produisent du bruit, et le
 premier tente de joindre un service resilie.
 
+### Le God Blueprint ne se supprime pas — il se vide, et dans cet ordre
+
+Constat verifie le 31/07/2026 en lisant les tags d'AssetRegistry des
+`.uasset` (le comptage de chaines ne suffit pas : il ne distingue pas un
+heritage d'un simple *Cast*) :
+
+```
+Character  ──►  BP_ConvaiCharacterBase  ──►  BP_AgentGermain
+(natif)         ParentClass = Character      ParentClass = ...Base_C
+                1 composant propre :         19 composants :
+                DefaultSceneRoot             Body, Face, Hair, coat...
+```
+
+Le parent est donc **de la logique pure** : toute la scenographie du
+MetaHuman vit chez l'enfant. Il n'y a **rien a supprimer dans sa liste de
+composants** — le `ConvaiChatbotComponent` y est une *variable* interrogee
+par l'ubergraph, pas un noeud de construction ; elle s'en va avec l'Event
+Graph. Le `Capsule` et l'`Arrow` sont hereditaires et non supprimables.
+
+**L'ordre compte.** `BP_AgentGermain` lit cette variable heritee (c'est le
+« BEGINPLAY CAST FAILED »). La retirer du parent d'abord casse le graphe de
+l'enfant :
+
+1. `BP_AgentGermain` : retirer le Cast et le Print String de BeginPlay
+2. `BP_ConvaiCharacterBase` : vider l'Event Graph
+3. Les variables du parent, une fois que plus personne ne les lit
+
+> Tant que cette chaine existe, `RetirerConvaiConversationnel` (dans
+> `AvatarSwitcherComponent.cpp`) est sur le **chemin nominal**, pas en
+> secours : tout avatar spawne herite du cablage Convai. Le reparentage de
+> `BP_AgentGermain` sur `Character` — annonce dans un commentaire, jamais
+> fait — reste la vraie sortie, mais il se fera a tete reposee.
+
 ## Reste a faire
 
 - [x] ~~Trancher : emotions ou lipsync ?~~ **Les deux** : l'emotion du LLM
