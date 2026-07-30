@@ -95,6 +95,15 @@ class Pipeline:
         )
         self.historique: list[tuple[str, str]] = []
 
+        # Emotion de la DERNIERE replique close. Le tag [EMOTION:] arrive
+        # apres le texte parle — c'est voulu, la lecture demarre sans
+        # l'attendre — donc la replique en cours ne connait jamais la
+        # sienne au moment ou on la synthetise. On prosodie sur la
+        # precedente : un garde qui vient de se facher garde le ton dans
+        # la phrase suivante, ce qui est plus juste qu'une remise a plat
+        # a chaque tour.
+        self.emotion_courante = "Stare"
+
     def reinitialiser(self) -> None:
         """Remet la session a zero — appele quand un visiteur quitte la zone."""
         self.etat.reinitialiser()
@@ -369,7 +378,8 @@ class Pipeline:
                 # de l'event loop pour que le sidecar reste joignable pendant
                 # qu'il parle.
                 parole = await asyncio.wait_for(
-                    asyncio.to_thread(self.tts.synthetiser, prononcable),
+                    asyncio.to_thread(
+                        self.tts.synthetiser, prononcable, self.emotion_courante),
                     timeout=DELAI_TTS,
                 )
 
@@ -428,6 +438,7 @@ class Pipeline:
             (texte_visiteur or "[Le visiteur se presente au poste.]", finale.texte)
         )
         self.etat.avancer(finale.verdict)
+        self.emotion_courante = finale.emotion   # prosodie du tour suivant
 
         _log.info("agent [%s/%s, %d question(s)] : %s",
                   finale.emotion, finale.verdict, self.etat.nb_questions, finale.texte)

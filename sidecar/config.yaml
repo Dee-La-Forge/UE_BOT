@@ -97,11 +97,34 @@ llm:
     cloture: "grammars/cloture.gbnf"       # verdict impose    (>= questions_max)
 
 tts:
-  # Piper, sur CPU (il n'utilise pas le GPU : inutile de le configurer).
+  # piper | chatterbox
+  #
+  #   piper       ~60 Mo, CPU, tres rapide. Sobre et sur — mais la voix
+  #               fr_FR-siwis est mecanique, « trop robotique » pour le
+  #               personnage (releve a l'ecoute le 30/07/2026).
+  #   chatterbox  350 M parametres, GPU de preference. Voix incarnee, et
+  #               surtout CLONAGE : voir echantillon_voix ci-dessous.
+  #               Licence MIT.
+  moteur: "piper"
+
+  # --- Piper ---
   voix: "fr_FR-siwis-medium"   # sortie a 22 050 Hz — le champ `taux` des
                                # parole.audio fait foi cote Unreal
   vitesse: 1.0
   volume: 1.0
+
+  # --- Chatterbox ---
+  # WAV d'une dizaine de secondes : la voix que prendra l'agent. Retirer
+  # la cle pour la voix par defaut du modele. Chemin relatif = depuis
+  # sidecar/.
+  # echantillon_voix: "voix/garde.wav"
+  #
+  # 0 = diction neutre. Monter donne un jeu plus appuye — un
+  # garde-frontiere n'a pas a surjouer.
+  exageration: 0.0
+  # auto | cuda | cpu. auto prend le GPU s'il y en a un, et retombe sur
+  # CPU si le chargement echoue (VRAM prise par le rendu Unreal).
+  peripherique: "auto"
   # (la cle `phonemes_pour_repli` — alignements pour le lipsync de repli par
   # visemes MHF_* — est RETIREE avec tout son chemin : le lipsync vient
   # d'Audio2Face, cote Unreal. La remettre a true fait refuser le demarrage,
