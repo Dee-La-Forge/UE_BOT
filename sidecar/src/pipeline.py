@@ -234,6 +234,38 @@ class Pipeline:
                 f"pas, passe a autre chose :\n{liste}]"
             )
 
+        # LE TIC D'OUVERTURE, et pourquoi la liste ci-dessus ne l'attrape pas.
+        #
+        # Le modele contourne l'interdiction de repetition en variant la FIN
+        # de sa phrase et en reprenant son DEBUT : aucune replique n'est
+        # identique a une autre, la consigne est donc formellement respectee,
+        # et l'entretien sonne pourtant comme un disque raye. Mesure du
+        # 31/07/2026 par bench/dialogue_test.py, profil menacant :
+        # « Doutez-vous vraiment que » ouvrait 5 repliques sur 7 (71 %).
+        #
+        # On lui montre donc ses ouvertures, litteralement — meme lecon que
+        # pour les questions deja posees : a un 3B, une regle abstraite
+        # (« jamais deux fois la meme tournure ») ne vaut pas une liste
+        # concrete de ce qu'il vient de faire.
+        #
+        # Six, et non quatre comme au-dessus : trois mots chacune ne pesent
+        # presque rien dans le prompt, et le tic s'installe sur la duree.
+        ouvertures: list[str] = []
+        for replique in deja[-6:]:
+            mots = replique.split()
+            if len(mots) < 2:
+                continue
+            tete = " ".join(mots[:3]).rstrip(",.;:!?»«")
+            if tete and tete.lower() not in (o.lower() for o in ouvertures):
+                ouvertures.append(tete)
+        if ouvertures:
+            liste_ouvertures = ", ".join(f"« {o} »" for o in ouvertures)
+            interdites += (
+                "\n[Tu as deja COMMENCE des repliques par : "
+                f"{liste_ouvertures}. Commence celle-ci par de tout autres "
+                "mots.]"
+            )
+
         rappel = (
             "[Ce sur quoi porte le controle :\n"
             f"{sujets}\n"

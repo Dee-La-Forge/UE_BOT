@@ -90,6 +90,24 @@ llm:
   # derniers jetons : assez pour casser la boucle, pas assez pour
   # l'empecher de reutiliser le vocabulaire du poste frontiere.
   penalite_repetition: 1.15
+  # ESSAYEE a 1024 le 31/07/2026, puis REMISE a 256. La mesure a tranche
+  # contre moi.
+  #
+  # Le raisonnement paraissait solide : llama.cpp compte les derniers N
+  # jetons du CONTEXTE, prompt compris, donc 256 ne couvrait guere plus que
+  # la replique precedente et ne pouvait pas penaliser les ouvertures d'il
+  # y a trois tours. Elargir devait donc casser le tic.
+  #
+  # Ca l'a casse — et abime le francais avec. La penalite ne distingue pas
+  # un tic d'un mot courant : sur 1024 jetons elle frappe aussi les
+  # articles, les verbes ordinaires et le vocabulaire du poste, et le
+  # modele part chercher ailleurs. Releve dans la meme execution :
+  # « Contrefacons, Victor, motifs ambigues », « intrusion territorial »,
+  # « repondons-en ».
+  #
+  # Le tic se traite par le PROMPT — la liste litterale des ouvertures deja
+  # employees, voir _etat_courant dans pipeline.py — qui vise le debut de
+  # replique et lui seul. Un instrument precis vaut mieux qu'un large.
   fenetre_repetition: 256
   # Attente maximale ENTRE DEUX morceaux du flux. Avant le premier, le
   # modele evalue le prompt sans rien emettre : a froid, sur un GPU
