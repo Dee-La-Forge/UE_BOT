@@ -24,9 +24,9 @@ public class GardeFrontiere : ModuleRules
 			"Json",
 			"JsonUtilities",
 
-			// Reception des blendshapes faciaux
-			"LiveLink",
-			"LiveLinkInterface",
+			// LiveLink/LiveLinkInterface retires : declares pour la
+			// reception de blendshapes NeuroSync, chemin abandonne
+			// (docs/LIPSYNC-DECISION.md) — aucun include ne les utilisait.
 
 			// Lecture du capteur de presence sur port serie
 			"SERIALCOM",

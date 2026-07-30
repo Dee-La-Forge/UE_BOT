@@ -210,6 +210,32 @@ public:
 	float DelaiReconnexion = 5.f;
 
 	/**
+	 * Marge apres la fin de la replique pendant laquelle le micro reste sourd.
+	 *
+	 * La borne ne doit pas s'entendre elle-meme : a volume d'exposition, la
+	 * voix TTS captee par le micro est segmentee par Silero comme n'importe
+	 * quelle parole, et chaque replique de l'agent repartait au sidecar comme
+	 * « reponse » du visiteur — l'interrogatoire pouvait avancer tout seul.
+	 * Les segments clos pendant que l'agent est audible sont jetes ; cette
+	 * marge couvre en plus la reverberation de la salle apres la lecture.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Garde Frontiere|Delais",
+		meta = (ClampMin = "0.0", Units = "s"))
+	float MargeEchoApresReplique = 0.4f;
+
+	/**
+	 * Delai avant de rouvrir une session quand la zone est restee occupee.
+	 *
+	 * Le capteur ne rend que des FRONTS : apres un abandon, un visiteur
+	 * toujours plante devant la borne ne produira jamais de nouveau
+	 * presence.detectee, et la borne l'ignorait indefiniment. Au retour en
+	 * veille zone occupee, une nouvelle session est reprogrammee ici.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Garde Frontiere|Delais",
+		meta = (ClampMin = "1.0", Units = "s"))
+	float DelaiReprisePresence = 3.f;
+
+	/**
 	 * Delai maximal entre une sollicitation du sidecar et sa reponse.
 	 *
 	 * La perte de CONNEXION est detectee par la socket, mais un sidecar gele
@@ -445,11 +471,25 @@ private:
 	// Relance d'un visiteur muet, au plus une par silence.
 	UFUNCTION() void SurSilenceVisiteur();
 
+	// Nouvelle session si la zone est restee occupee au retour en veille.
+	UFUNCTION() void SurReprisePresence();
+
+	/**
+	 * L'agent est-il audible en ce moment ?
+	 *
+	 * bRepliqueEnCours ne couvre que le FLUX (parole.debut -> parole.fin) :
+	 * ACE comme Voix continuent de jouer leur tampon apres parole.fin. Pour
+	 * savoir si le micro risque de capter la voix de la borne, il faut
+	 * interroger les lecteurs eux-memes.
+	 */
+	bool AgentAudible();
+
 	FTimerHandle MinuterieAbandon;
 	FTimerHandle MinuterieSortie;
 	FTimerHandle MinuterieReconnexion;
 	FTimerHandle MinuterieSurveillanceIA;
 	FTimerHandle MinuterieRelance;
+	FTimerHandle MinuterieReprise;
 
 	/**
 	 * Une relance a deja ete faite pour le silence en cours.
@@ -460,6 +500,28 @@ private:
 	 * relance en boucle, indefiniment.
 	 */
 	bool bRelanceFaite = false;
+
+	/**
+	 * La panne IA a deja ete annoncee au visiteur de cette session.
+	 *
+	 * SurPanneIA repasse a chaque echec de reconnexion (toutes les
+	 * DelaiReconnexion secondes) : sans ce garde, l'agent repetait « Poste
+	 * ferme. Repassez plus tard. » en boucle devant le meme visiteur.
+	 */
+	bool bPanneAnnoncee = false;
+
+	/**
+	 * La substitution d'avatar a ete differee : la zone etait encore occupee
+	 * a la fin de la session, et glitcher devant temoin montrerait le tour.
+	 * Elle sera jouee quand la zone se videra (SurPresencePerdue en veille).
+	 */
+	bool bSubstitutionDifferee = false;
+
+	/** Dernier instant ou l'agent a ete constate audible (anti-echo). */
+	double InstantAgentAudible = -1.0e9;
+
+	/** Dernier « Repetez. » du mode degrade, pour ne pas le marteler. */
+	double InstantDernierRepetez = -1.0e9;
 
 	/** Distincte des cles du capteur, pour que les deux messages coexistent. */
 	static constexpr uint64 CleAffichagePhase = 8810;

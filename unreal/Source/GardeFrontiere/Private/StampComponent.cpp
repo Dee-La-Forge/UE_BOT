@@ -93,6 +93,16 @@ void UStampComponent::AppelerEvenement(FName Nom, const FString& Argument)
 	void* Params = FMemory_Alloca(Fonction->ParmsSize);
 	FMemory::Memzero(Params, Fonction->ParmsSize);
 
+	// Initialiser puis detruire chaque parametre dans les regles : Memzero
+	// suffit aux POD, pas aux types geres. L'affectation directe de la
+	// FString sur un buffer zeroise allouait sans jamais liberer — une fuite
+	// par verdict — et un futur parametre non trivial (TArray, FText)
+	// corromprait la pile.
+	for (TFieldIterator<FProperty> It(Fonction); It && It->HasAnyPropertyFlags(CPF_Parm); ++It)
+	{
+		It->InitializeValue_InContainer(Params);
+	}
+
 	bool bRenseigne = false;
 	for (TFieldIterator<FProperty> It(Fonction); It && It->HasAnyPropertyFlags(CPF_Parm); ++It)
 	{
@@ -112,6 +122,11 @@ void UStampComponent::AppelerEvenement(FName Nom, const FString& Argument)
 	}
 
 	Widget->ProcessEvent(Fonction, Params);
+
+	for (TFieldIterator<FProperty> It(Fonction); It && It->HasAnyPropertyFlags(CPF_Parm); ++It)
+	{
+		It->DestroyValue_InContainer(Params);
+	}
 }
 
 void UStampComponent::AfficherVerdict(EGuardVerdict Decision)

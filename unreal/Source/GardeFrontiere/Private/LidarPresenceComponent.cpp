@@ -153,8 +153,27 @@ void ULidarPresenceComponent::FermerPort()
 {
 	if (Serie)
 	{
-		Serie->Close();
-		Serie = nullptr;
+		// Ne JAMAIS fermer un handle pendant qu'une lecture court sur le
+		// thread de fond : Readln serait en WaitForSingleObject (jusqu'a
+		// 2 s) sur un handle clos — comportement indefini Win32, gel ou
+		// crash, precisement dans la sequence d'arret qu'on instrumente.
+		// Le chemin « liaison perdue » de Lire() se protegeait deja en
+		// testant bLectureEnVol ; Deactivate et EndPlay, non.
+		//
+		// On lache seulement la reference : le retour de lecture (thread de
+		// jeu) constatera que le port n'est plus le port courant et le
+		// fermera lui-meme, la lecture rendue.
+		if (bLectureEnVol.Load())
+		{
+			UE_LOG(LogGardeFrontiere, Log,
+				TEXT("Capteur : lecture en vol — fermeture differee au retour"));
+			Serie = nullptr;
+		}
+		else
+		{
+			Serie->Close();
+			Serie = nullptr;
+		}
 	}
 	bPortOuvert = false;
 }
@@ -250,11 +269,23 @@ void ULidarPresenceComponent::Lire()
 			AsyncTask(ENamedThreads::GameThread,
 				[Faible, Port, Derniere, NbLues]()
 				{
+					ULidarPresenceComponent* Comp = Faible.Get();
+
+					// FermerPort pendant la lecture (Deactivate, EndPlay) n'a
+					// pas ose clore un handle en cours d'utilisation : il a
+					// seulement lache sa reference. La lecture est rendue,
+					// c'est ICI qu'on ferme — port orphelin (composant
+					// disparu) ou port remplace, meme traitement.
+					const bool bToujoursCourant = Comp && Comp->Serie == Port;
+					if (!bToujoursCourant && IsValid(Port))
+					{
+						Port->Close();
+					}
+
 					// La lecture est rendue : le port peut repartir au GC.
 					// Inconditionnel — meme si le composant a disparu.
 					Port->RemoveFromRoot();
 
-					ULidarPresenceComponent* Comp = Faible.Get();
 					if (!Comp)
 					{
 						return;   // le composant a disparu entre-temps
@@ -263,7 +294,7 @@ void ULidarPresenceComponent::Lire()
 
 					// Le port a pu etre ferme et rouvert pendant la lecture :
 					// un releve d'une liaison morte n'a plus de valeur.
-					if (Comp->Serie == Port && !Derniere.IsEmpty())
+					if (bToujoursCourant && !Derniere.IsEmpty())
 					{
 						Comp->MesuresParCycle = NbLues;
 						Comp->TraiterReleve(Derniere);

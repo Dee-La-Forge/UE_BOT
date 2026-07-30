@@ -307,10 +307,13 @@ void UAvatarSwitcherComponent::PreparerAudio2Face(AActor* Avatar) const
 
 	// -- Le composant ACE ------------------------------------------------
 	//
-	// Instancie par nom de classe, comme le retrait Convai : le module
-	// GardeFrontiere reste compilable sans les 4 Go du plugin NVIDIA, qui ne
-	// sont pas versionnes. Une borne sans Audio2Face parle et entend encore ;
-	// seule la bouche reste immobile.
+	// Instancie par nom de classe, comme le retrait Convai. ATTENTION : cela
+	// ne rend PAS le module compilable sans le plugin NVIDIA — l'include
+	// direct de ACEAudioCurveSourceComponent.h (TrouverComposantACE) et les
+	// dependances ACERuntime/ACECore du Build.cs sont dures. Seul Silero est
+	// reellement optionnel. L'instanciation par nom ne sert ici qu'au repli
+	// A L'EXECUTION : plugin present mais modele absent, la borne parle et
+	// entend encore, seule la bouche reste immobile.
 	UClass* ClasseACE = FindObject<UClass>(
 		nullptr, TEXT("/Script/ACERuntime.ACEAudioCurveSourceComponent"));
 

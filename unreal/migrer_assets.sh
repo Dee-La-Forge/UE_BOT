@@ -2,8 +2,8 @@
 # Migration des assets depuis l'ancien projet.
 #
 # Copie uniquement ce qui sert, et laisse derriere ce qui est regenerable
-# (Intermediate, Binaries) ou mort (Grondin, Smith, PoliceUniform, presets
-# d'eclairage). Idempotent : relancable sans dommage.
+# (Intermediate, Binaries) ou mort (Grondin, Smith, presets d'eclairage).
+# Idempotent : relancable sans dommage.
 
 set -u
 ANCIEN="/d/Archives/GardeFrontiereByDboy"
@@ -112,7 +112,6 @@ echo ""
 echo "=== NON MIGRE (volontairement) ==="
 cat <<'NOTE'
   AgentGrondin, AgentSmith   aucun Character ID, aucune reference
-  PoliceUniform              non reference par la scene
   Maps/MHC_LightingPresets   18 maps d'exemple MetaHuman
   Intermediate, Binaries     regeneres a la compilation
   Saved, DerivedDataCache    caches

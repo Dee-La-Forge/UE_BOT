@@ -201,7 +201,19 @@ void USidecarClient::TraiterMessage(const FString& Message)
 	}
 	else if (Evenement == TEXT("verdict"))
 	{
-		const EGuardVerdict D = VersVerdict(Json->GetStringField(TEXT("decision")));
+		const FString Decision = Json->GetStringField(TEXT("decision"));
+		const EGuardVerdict D = VersVerdict(Decision);
+
+		// Un verdict illisible passait pour EnCours, que l'affichage binaire
+		// du tampon transformait en REFUSE : une retouche cote Python (casse,
+		// accent) refusait tous les visiteurs sans une ligne d'erreur.
+		if (D == EGuardVerdict::EnCours)
+		{
+			UE_LOG(LogGardeFrontiere, Warning,
+				TEXT("Sidecar : verdict illisible '%s' — ignore"), *Decision);
+			return;
+		}
+
 		UE_LOG(LogGardeFrontiere, Log, TEXT("Sidecar : verdict %s"),
 			D == EGuardVerdict::Accepte ? TEXT("ACCEPTE") : TEXT("REFUSE"));
 		OnVerdict.Broadcast(D);
@@ -268,7 +280,10 @@ EGuardEmotion USidecarClient::VersEmotion(const FString& Valeur)
 
 EGuardVerdict USidecarClient::VersVerdict(const FString& Valeur)
 {
-	if (Valeur == TEXT("ACCEPTE")) return EGuardVerdict::Accepte;
-	if (Valeur == TEXT("REFUSE"))  return EGuardVerdict::Refuse;
+	// Sans casse : la grammaire GBNF garantit ACCEPTE/REFUSE en majuscules,
+	// mais le verdict traverse deux depots — une retouche Python ne doit pas
+	// pouvoir refuser tous les visiteurs en silence.
+	if (Valeur.Equals(TEXT("ACCEPTE"), ESearchCase::IgnoreCase)) return EGuardVerdict::Accepte;
+	if (Valeur.Equals(TEXT("REFUSE"), ESearchCase::IgnoreCase))  return EGuardVerdict::Refuse;
 	return EGuardVerdict::EnCours;
 }

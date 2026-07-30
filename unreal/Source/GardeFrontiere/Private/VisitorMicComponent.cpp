@@ -122,12 +122,18 @@ void UVisitorMicComponent::FermerCapture()
 {
 	if (Micro)
 	{
-		// Detacher AVANT d'arreter : une derniere trame arrivant pendant la
-		// fermeture trouverait un composant en cours de destruction.
+		// Couper la SOURCE d'abord, detacher ensuite. TMulticastDelegate
+		// n'est pas thread-safe : un Remove execute sur le thread de jeu
+		// pendant qu'un Broadcast du thread de capture parcourt la liste
+		// d'invocation peut la corrompre — crash rare et irreproductible
+		// sur une borne a milliers de sessions. StopCapture tarit le flux ;
+		// l'eventuel dernier callback en vol est tolere par le
+		// TWeakObjectPtr du lambda.
+		Micro->StopCapture();
+
 		Micro->OnPopulateAudioDataNative.Remove(PoigneeAudio);
 		PoigneeAudio.Reset();
 
-		Micro->StopCapture();
 		Micro->ReleaseMemory();
 		Micro = nullptr;
 	}

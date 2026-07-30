@@ -300,6 +300,15 @@ void AGuardSessionManager::DemarrerSession()
 
 	DernierVerdict = EGuardVerdict::EnCours;
 	bRelanceFaite = false;
+	bPanneAnnoncee = false;
+
+	// Une session demarre : la reprise programmee n'a plus d'objet, et la
+	// substitution differee sera rejouee a la fin de CETTE session.
+	bSubstitutionDifferee = false;
+	if (UWorld* Monde = GetWorld())
+	{
+		Monde->GetTimerManager().ClearTimer(MinuterieReprise);
+	}
 
 	// L'index reel est renseigne par SurAvatarChange, une fois la
 	// permutation faite par UAvatarSwitcherComponent.
@@ -351,6 +360,29 @@ void AGuardSessionManager::TransmettreParoleVisiteur(
 		return;
 	}
 
+	// La borne ne doit pas s'entendre elle-meme. A volume d'exposition, la
+	// voix TTS captee par le micro est segmentee par Silero comme n'importe
+	// quelle parole, passait le seuil de niveau, et repartait au sidecar
+	// comme « reponse » du visiteur : l'interrogatoire pouvait avancer tout
+	// seul, sur les propres repliques de la borne. Tout segment clos pendant
+	// que l'agent est audible est donc jete, plus une marge apres la fin de
+	// lecture, le temps que la reverberation de la salle retombe.
+	const double Maintenant = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.0;
+	if (AgentAudible())
+	{
+		InstantAgentAudible = Maintenant;
+		UE_LOG(LogGardeFrontiere, Log,
+			TEXT("Segment micro ignore : l'agent parle encore — echo probable"));
+		return;
+	}
+	if (Maintenant - InstantAgentAudible < MargeEchoApresReplique)
+	{
+		UE_LOG(LogGardeFrontiere, Log,
+			TEXT("Segment micro ignore : replique finie il y a moins de %.1f s"),
+			MargeEchoApresReplique);
+		return;
+	}
+
 	// Un micro debranche ou coupe produit un segment silencieux. L'envoyer
 	// ferait transcrire du vide et repondre l'agent dans le vent.
 	const float Crete = UAudioBridge::NiveauCrete(Echantillons);
@@ -393,8 +425,46 @@ void AGuardSessionManager::TransmettreParoleVisiteur(
 	}
 	else
 	{
-		OnRepliqueDeSecours.Broadcast(TEXT("Repetez."));
+		// Mode degrade : le visiteur PARLE — on repousse l'abandon, qui
+		// tombait a 30 s pile en pleine phrase. Et « Repetez. » part au plus
+		// une fois par fenetre : chaque segment VAD declenchait le sien, et
+		// un visiteur volubile se faisait rabrouer en rafale.
+		ArmerAbandon();
+		if (Maintenant - InstantDernierRepetez >= 6.0)
+		{
+			InstantDernierRepetez = Maintenant;
+			OnRepliqueDeSecours.Broadcast(TEXT("Repetez."));
+		}
 	}
+}
+
+bool AGuardSessionManager::AgentAudible()
+{
+	// Le flux est ouvert : des trames arrivent ou vont arriver.
+	if (bRepliqueEnCours)
+	{
+		return true;
+	}
+
+	// parole.fin clot le FLUX, pas la LECTURE : ACE comme Voix continuent
+	// de jouer ce qu'ils ont en tampon, parfois plusieurs secondes.
+	if (Voix && Voix->EstEnTrainDeParler())
+	{
+		return true;
+	}
+
+	if (Avatars)
+	{
+		if (UACEAudioCurveSourceComponent* Source = Avatars->TrouverComposantACE())
+		{
+			if (Source->IsPlaying())
+			{
+				return true;
+			}
+		}
+	}
+
+	return false;
 }
 
 void AGuardSessionManager::TerminerSession(EGuardFinDeSession Raison)
@@ -444,15 +514,51 @@ void AGuardSessionManager::TerminerSession(EGuardFinDeSession Raison)
 	// le glitch, sans temoin. Le visiteur suivant trouvera un autre agent
 	// sans avoir vu la substitution — c'est tout l'objet du dispositif.
 	//
+	// « Sans temoin » se VERIFIE : apres un abandon, le visiteur est souvent
+	// encore devant la borne. Glitcher sous ses yeux montrerait le tour, et
+	// l'ignorer ensuite le planterait devant une borne morte — le capteur ne
+	// rend que des fronts, aucun nouveau presence.detectee ne viendra tant
+	// que la zone ne se vide pas. Zone occupee : substitution differee, et
+	// nouvelle session reprogrammee.
+	//
 	// Declenche apres le Arreter() du nettoyage ci-dessus, sinon on eteindrait
 	// l'effet qu'on vient d'allumer.
-	if (Glitch)
+	const bool bZoneVide = !Presence || !Presence->bPresent;
+	if (bZoneVide)
 	{
-		Glitch->Declencher();   // la permutation suivra OnGlitchTermine
+		if (Glitch)
+		{
+			Glitch->Declencher();   // la permutation suivra OnGlitchTermine
+		}
+		else if (Avatars)
+		{
+			Avatars->Permuter();
+		}
 	}
-	else if (Avatars)
+	else
 	{
-		Avatars->Permuter();
+		bSubstitutionDifferee = true;
+		UE_LOG(LogGardeFrontiere, Log,
+			TEXT("Zone encore occupee — substitution differee, nouvelle session dans %.0f s"),
+			DelaiReprisePresence);
+		if (UWorld* Monde = GetWorld())
+		{
+			Monde->GetTimerManager().SetTimer(
+				MinuterieReprise, this, &AGuardSessionManager::SurReprisePresence,
+				FMath::Max(DelaiReprisePresence, 1.f), false);
+		}
+	}
+}
+
+void AGuardSessionManager::SurReprisePresence()
+{
+	// La zone a pu se vider, ou une session demarrer, entre l'armement et
+	// l'echeance : on ne force rien dans ces cas-la.
+	if (Phase == EGuardPhase::Veille && Presence && Presence->bPresent)
+	{
+		UE_LOG(LogGardeFrontiere, Log,
+			TEXT("Visiteur toujours present au retour en veille — nouvelle session"));
+		DemarrerSession();
 	}
 }
 
@@ -470,6 +576,26 @@ void AGuardSessionManager::SurPresencePerdue()
 {
 	if (Phase == EGuardPhase::Veille)
 	{
+		// La zone se vide en veille : si une substitution attendait le
+		// depart du temoin (fin de session zone occupee), c'est le moment
+		// de la jouer — sans elle, le visiteur suivant retrouverait le
+		// meme visage, ce que toute la mecanique cherche a eviter.
+		if (bSubstitutionDifferee)
+		{
+			bSubstitutionDifferee = false;
+			if (UWorld* Monde = GetWorld())
+			{
+				Monde->GetTimerManager().ClearTimer(MinuterieReprise);
+			}
+			if (Glitch)
+			{
+				Glitch->Declencher();
+			}
+			else if (Avatars)
+			{
+				Avatars->Permuter();
+			}
+		}
 		return;
 	}
 
@@ -655,6 +781,9 @@ void AGuardSessionManager::SurParoleDebut(const FString& Texte, EGuardEmotion Em
 
 	bIADisponible = true;
 
+	// Le sidecar repond : une future panne meritera une nouvelle annonce.
+	bPanneAnnoncee = false;
+
 	// Le sidecar vient de repondre : la surveillance a rempli son office.
 	AnnulerSurveillanceIA();
 
@@ -708,6 +837,14 @@ void AGuardSessionManager::SurParoleFin()
 	// trame recue.
 	bRepliqueEnCours = false;
 	FermerSessionA2F();
+
+	// Point de depart de la marge anti-echo : la lecture peut continuer
+	// apres ce parole.fin, AgentAudible() la couvre, mais il faut une
+	// origine pour la marge une fois la lecture finie.
+	if (UWorld* Monde = GetWorld())
+	{
+		InstantAgentAudible = Monde->GetTimeSeconds();
+	}
 
 	ArmerAbandon();
 
@@ -805,9 +942,13 @@ void AGuardSessionManager::SurPanneIA(const FString& Raison)
 	UE_LOG(LogGardeFrontiere, Error, TEXT("IA indisponible : %s"), *Raison);
 
 	// Une borne muette avec un visiteur planté devant est le seul echec
-	// vraiment couteux. On parle, meme mal.
-	if (Phase != EGuardPhase::Veille)
+	// vraiment couteux. On parle, meme mal — mais UNE fois par session :
+	// chaque echec de reconnexion repasse par ici toutes les
+	// DelaiReconnexion secondes, et l'agent repetait « Poste ferme » en
+	// boucle devant le meme visiteur, jusqu'a six fois avant l'abandon.
+	if (Phase != EGuardPhase::Veille && !bPanneAnnoncee)
 	{
+		bPanneAnnoncee = true;
 		OnRepliqueDeSecours.Broadcast(TEXT("Poste ferme. Repassez plus tard."));
 	}
 
