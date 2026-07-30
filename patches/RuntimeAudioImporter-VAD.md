@@ -72,6 +72,23 @@ fournisseur Silero par nom de classe (`PreparerVAD`) et appelle
 compiler (5 erreurs au demarrage, relevees le 30/07/2026) — pour une
 fonctionnalite que le C++ assure deja.
 
+## Le dialogue « designed for build 5.5.0 »
+
+Au demarrage, l'editeur demande :
+
+> The 'RuntimeAudioImporter' plugin was designed for build 5.5.0.
+> Attempt to load it anyway?
+
+**Repondre oui** — et le champ a ete retire des `.uplugin` le 30/07/2026
+pour que la question ne revienne plus. `EngineVersion` n'est qu'une
+etiquette declarative : ces plugins sont fournis avec leurs sources et
+**recompiles contre 5.7** a chaque build du projet. Le meme geste avait
+ete fait pour NV_ACE_Reference (declare 5.6) — voir
+`patches/NV_ACE_Reference-UE5.7.md`.
+
+A refaire apres toute reinstallation depuis Fab ou le marketplace, qui
+remet le champ.
+
 ## Lecon
 
 Une extension maison logee dans un plugin tiers non versionne disparait
