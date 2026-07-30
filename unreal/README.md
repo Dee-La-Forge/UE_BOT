@@ -102,7 +102,7 @@ C++ ne peut pas nettoyer. Trois gestes, releves au journal du 30/07/2026 :
 | Ou | Quoi | Symptome |
 |---|---|---|
 | `Studio.umap` → World Settings | **GameMode Override** encore sur `ConvaiDemoGM` | `LogLoad: Game class is 'ConvaiDemoGM_C'`, puis `Empty API Key` a chaque lancement. Le remplacant existe : `GardeFrontiereGameMode` (deja pose en `GlobalDefaultGameMode`, mais un override de carte l'emporte) |
-| `BP_AgentGermain` → Event BeginPlay | **Cast vers le composant Convai** retire au spawn | « BEGINPLAY CAST FAILED » **affiche a l'ecran** — inacceptable devant du public |
+| `BP_ConvaiCharacterBase` → Event BeginPlay | **Cast vers le composant Convai** retire au spawn | « BEGINPLAY CAST FAILED » **affiche a l'ecran** — inacceptable devant du public. Attribue par erreur a `BP_AgentGermain` jusqu'au 31/07/2026 : le texte n'est pas dans son fichier, il est herite du parent |
 | `Studio.umap` | un acteur porte encore un **ConvaiPlayerComponent** | cherche le submix « AudioInput » au demarrage |
 
 Aucun n'empeche la borne de fonctionner ; tous produisent du bruit, et le
@@ -127,13 +127,32 @@ composants** — le `ConvaiChatbotComponent` y est une *variable* interrogee
 par l'ubergraph, pas un noeud de construction ; elle s'en va avec l'Event
 Graph. Le `Capsule` et l'`Arrow` sont hereditaires et non supprimables.
 
-**L'ordre compte.** `BP_AgentGermain` lit cette variable heritee (c'est le
-« BEGINPLAY CAST FAILED »). La retirer du parent d'abord casse le graphe de
-l'enfant :
+**Tout le nettoyage est dans le parent.** Verifie le 31/07/2026 en relevant
+les noeuds des deux graphes :
 
-1. `BP_AgentGermain` : retirer le Cast et le Print String de BeginPlay
-2. `BP_ConvaiCharacterBase` : vider l'Event Graph
-3. Les variables du parent, une fois que plus personne ne les lit
+| | `BP_AgentGermain` | `BP_ConvaiCharacterBase` |
+|---|---|---|
+| `ReceiveBeginPlay` | **0** | 3 |
+| chaine « BEGINPLAY CAST FAILED » | **0** | 2 |
+| composant Convai | `ConvaiChatbot_REMOVED_...` | (variable seule) |
+
+`BP_AgentGermain` est **deja propre** : son composant Convai porte le suffixe
+`_REMOVED_` qu'Unreal donne aux objets supprimes, et son graphe ne contient
+plus que de la logique MetaHuman — un `Event Tick`, les deux
+`OnAnimInitialized` du corps et du visage, et des `Cast` vers
+`Convai_MetaHuman_BodyAnim_C` / `FaceAnim_C`. **Ces Cast-la se gardent** :
+ce sont les AnimBP du plugin, que le projet conserve volontairement (voir
+« Assets migres »). Les supprimer arreterait les animations.
+
+Reste donc un seul geste, dans le parent : **vider son Event Graph**. Ce
+qu'il contient encore se lit dans ses propres etiquettes de debogage, et
+c'est mot pour mot l'inventaire repris en C++ — `INITIALISATION DE LA
+SCENE`, `SWITCH PERSONNAGE`, `MICRO ON` / `MICRO OFF`, `GLITCH MANAGER`,
+`CLEAN DU CHATBOT`, `RELOAD APRES ABANDON`, `RESET PERSONNAGE`,
+`CLEAR CHAT`, `ACTIVE MH SET`.
+
+Ses **variables** se traitent apres, et seulement une fois le graphe vide :
+tant qu'un noeud les lit, les retirer casse la compilation.
 
 > Tant que cette chaine existe, `RetirerConvaiConversationnel` (dans
 > `AvatarSwitcherComponent.cpp`) est sur le **chemin nominal**, pas en
