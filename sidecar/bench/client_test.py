@@ -47,17 +47,30 @@ def charger_pcm16(chemin: Path) -> bytes:
 
 
 async def attendre_tour(ws, delai: float = 60.0) -> dict:
-    """Consomme les evenements jusqu'a la fin de la replique de l'agent."""
+    """Consomme les evenements jusqu'a la fin du tour de l'agent.
+
+    Apres parole.fin, le serveur envoie encore emotion — et, sur le dernier
+    tour, verdict + session.terminee. On continue donc de lire avec un delai
+    court apres la fin de replique, au lieu de rendre la main a parole.fin :
+    l'ancienne version manquait l'emotion a chaque tour, et le verdict
+    fuyait dans le releve du tour suivant.
+    """
     resume = {"phrases": [], "emotion": None, "verdict": None,
-              "terminee": False, "visemes": 0, "octets": 0, "premier_son_ms": None}
+              "terminee": False, "octets": 0, "premier_son_ms": None}
     t0 = time.perf_counter()
     attente_binaire = False
+    fin_recue = False
 
     while True:
+        # Tour fini et trames drainees : il ne reste que la queue de
+        # _conclure (emotion, verdict eventuels) — delai court.
+        drainage = fin_recue and not attente_binaire
         try:
-            msg = await asyncio.wait_for(ws.recv(), timeout=delai)
+            msg = await asyncio.wait_for(
+                ws.recv(), timeout=0.5 if drainage else delai)
         except asyncio.TimeoutError:
-            print("    ! delai depasse")
+            if not drainage:
+                print("    ! delai depasse")
             return resume
 
         if isinstance(msg, bytes):
@@ -69,11 +82,11 @@ async def attendre_tour(ws, delai: float = 60.0) -> dict:
         nom = ev.get("evenement")
 
         if nom == "parole.debut":
+            fin_recue = False
             if resume["premier_son_ms"] is None:
                 resume["premier_son_ms"] = (time.perf_counter() - t0) * 1000
         elif nom == "parole.audio":
             resume["phrases"].append(ev.get("texte", ""))
-            resume["visemes"] += len(ev.get("visemes", []))
             attente_binaire = True
         elif nom == "emotion":
             resume["emotion"] = ev.get("valeur")
@@ -83,12 +96,7 @@ async def attendre_tour(ws, delai: float = 60.0) -> dict:
             resume["terminee"] = True
             return resume
         elif nom == "parole.fin":
-            if not attente_binaire:
-                # La replique est close et aucune trame binaire n'est en
-                # attente : le tour est fini.
-                await asyncio.sleep(0.05)
-                if resume["verdict"] is None:
-                    return resume
+            fin_recue = True
         elif nom == "erreur":
             print(f"    ! erreur : {ev.get('code')}")
             return resume
@@ -125,7 +133,7 @@ async def principal() -> int:
 
             son = f"{r['premier_son_ms']:.0f} ms" if r["premier_son_ms"] else "—"
             print(f"  tour {i:>2}  [{son:>8}]  {r['emotion'] or '—':<10} "
-                  f"{r['octets'] / 1024:>6.0f} Ko  {r['visemes']:>3} visemes")
+                  f"{r['octets'] / 1024:>6.0f} Ko")
             for p in r["phrases"]:
                 print(f"            « {p} »")
 

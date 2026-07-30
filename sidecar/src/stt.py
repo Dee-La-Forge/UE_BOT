@@ -34,6 +34,13 @@ class Transcripteur:
         # frontiere coute zero latence et reduit les inventions sur les
         # fragments courts — la ou naissaient les « pandinvestigation ».
         self._contexte = config.get("contexte") or None
+        # Echecs d'INFERENCE consecutifs. Le cas reel d'un GPU sature par
+        # Unreal n'est pas « le chargement echoue » : les poids se chargent
+        # tres bien, c'est l'activation qui manque de VRAM. Sans ce compteur,
+        # chaque tour refaisait le meme cycle — echec d'inference,
+        # rechargement CUDA reussi (plusieurs secondes), echec au tour
+        # suivant — et la bascule CPU promise n'arrivait jamais.
+        self._echecs_inference = 0
         self._modele = self._charger()
 
     def _charger(self) -> WhisperModel:
@@ -43,13 +50,34 @@ class Transcripteur:
             compute_type=self._type_calcul,
         )
 
+    # Au-dela de ce nombre d'echecs d'inference d'affilee, le GPU est
+    # considere durablement inutilisable, meme si les chargements reussissent.
+    ECHECS_AVANT_CPU = 3
+
+    def _basculer_cpu(self) -> None:
+        _log.warning("bascule definitive du STT sur CPU")
+        self._peripherique = "cpu"
+        self._type_calcul = "int8"
+        self._modele = self._charger()
+
     def _recharger(self) -> None:
         """Tente de remettre le modele en etat apres une erreur d'inference.
 
         D'abord a l'identique — un CUDA OOM ponctuel se resorbe souvent au
-        rechargement. Si meme le chargement echoue, on bascule sur CPU :
-        plus lent, mais une borne lente vaut mieux qu'une borne sourde.
+        rechargement. Bascule sur CPU si le chargement echoue, OU si les
+        inferences echouent en serie malgre des rechargements qui reussissent
+        (VRAM durablement mangee par Unreal) : plus lent, mais une borne
+        lente vaut mieux qu'une borne sourde.
         """
+        if (self._peripherique != "cpu"
+                and self._echecs_inference >= self.ECHECS_AVANT_CPU):
+            _log.error(
+                "%d echecs d'inference d'affilee sur %s — le rechargement "
+                "ne suffit pas", self._echecs_inference, self._peripherique,
+            )
+            self._basculer_cpu()
+            return
+
         try:
             self._modele = self._charger()
             _log.warning("STT recharge sur %s", self._peripherique)
@@ -60,9 +88,7 @@ class Transcripteur:
                 "rechargement sur %s impossible — bascule definitive sur CPU",
                 self._peripherique,
             )
-            self._peripherique = "cpu"
-            self._type_calcul = "int8"
-            self._modele = self._charger()
+            self._basculer_cpu()
 
     def transcrire(self, audio: np.ndarray, taux: int = 16000) -> str:
         """Transcrit un segment PCM float32 mono.
@@ -92,8 +118,11 @@ class Transcripteur:
                 condition_on_previous_text=False,
                 initial_prompt=self._contexte,
             )
-            return " ".join(s.text.strip() for s in segments).strip()
+            texte = " ".join(s.text.strip() for s in segments).strip()
+            self._echecs_inference = 0
+            return texte
         except Exception:
+            self._echecs_inference += 1
             # Le tour courant est perdu — le repli d'en haut s'en charge —
             # mais le SUIVANT doit trouver un modele en etat de marche.
             _log.exception("inference STT tombee sur %s — rechargement", self._peripherique)

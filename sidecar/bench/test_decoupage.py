@@ -4,6 +4,11 @@ Cette logique est le point delicat du streaming : si une phrase est emise
 trop tot on coupe la parole, trop tard on perd le benefice du streaming, et
 si un tag fuit dans le texte parle l'agent prononce "crochet EMOTION".
 
+Les jetons passent par le VRAI ClientLLM.phrases(), via un transport httpx
+factice qui rejoue un flux SSE — l'ancienne version reimplantait la boucle
+de streaming dans le test, et une regression dans phrases() serait passee
+inapercue.
+
 Ne demande aucun modele — executable immediatement :
 
     py -3.12 -m bench.test_decoupage
@@ -11,42 +16,56 @@ Ne demande aucun modele — executable immediatement :
 
 from __future__ import annotations
 
+import asyncio
+import json
 import re
 import sys
 from pathlib import Path
 
+import httpx
+
 RACINE = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(RACINE))
 
-from src.llm import _FIN_DE_PHRASE, ClientLLM  # noqa: E402
+from src.llm import ClientLLM, Replique  # noqa: E402
 
 
-def flux_vers_phrases(jetons: list[str]) -> tuple[list[str], str]:
-    """Rejoue la logique de streaming de ClientLLM.phrases()."""
-    complet = ""
-    tampon = ""
-    dans_les_tags = False
+def _corps_sse(jetons: list[str]) -> bytes:
+    """Fabrique la reponse SSE qu'enverrait llama.cpp server."""
+    lignes = ["data: " + json.dumps({"content": j}) + "\n\n" for j in jetons]
+    lignes.append("data: " + json.dumps({"content": "", "stop": True}) + "\n\n")
+    return "".join(lignes).encode()
+
+
+async def _rejouer(jetons: list[str]) -> tuple[list[str], Replique | None, int]:
+    """Passe les jetons dans ClientLLM.phrases() et collecte ce qui sort."""
+    corps = _corps_sse(jetons)
+    transport = httpx.MockTransport(lambda requete: httpx.Response(200, content=corps))
+
+    client = ClientLLM({"url": "http://faux"}, RACINE)
+    await client._client.aclose()
+    client._client = httpx.AsyncClient(transport=transport)
+
+    appels_premier_jeton = 0
+
+    def au_premier_jeton() -> None:
+        nonlocal appels_premier_jeton
+        appels_premier_jeton += 1
+
     phrases: list[str] = []
-
-    for jeton in jetons:
-        complet += jeton
-        if dans_les_tags:
-            continue
-        if "[" in jeton:
-            avant, _, _ = jeton.partition("[")
-            tampon += avant
-            dans_les_tags = True
-        else:
-            tampon += jeton
-        while (m := _FIN_DE_PHRASE.search(tampon)) is not None:
-            phrase = tampon[: m.end()].strip()
-            tampon = tampon[m.end():]
-            if phrase:
+    finale: Replique | None = None
+    try:
+        async for phrase, replique in client.phrases(
+            "prompt", "entretien", au_premier_jeton=au_premier_jeton
+        ):
+            if replique is not None:
+                finale = replique
+            elif phrase:
                 phrases.append(phrase)
+    finally:
+        await client.fermer()
 
-    if (reste := tampon.strip()):
-        phrases.append(reste)
-    return phrases, complet
+    return phrases, finale, appels_premier_jeton
 
 
 CAS = [
@@ -79,6 +98,16 @@ CAS = [
         ["Bonjour", "."],
         1, "Neutral", "EN_COURS",
     ),
+    (
+        "decimale : « 2.5 » ne doit pas couper la phrase",
+        ["Vous", " restez", " 2", ".", "5", " jours", " ?", " Repondez", ".", " "],
+        2, "Neutral", "EN_COURS",
+    ),
+    (
+        "civilite : « M. Dupont » ne doit pas couper la phrase",
+        ["Vos", " papiers", ",", " M", ".", " Dupont", ".", " "],
+        1, "Neutral", "EN_COURS",
+    ),
 ]
 
 
@@ -86,20 +115,24 @@ def main() -> int:
     echecs = 0
 
     for intitule, jetons, nb_attendu, emo_attendue, verdict_attendu in CAS:
-        phrases, complet = flux_vers_phrases(jetons)
-        replique = ClientLLM._extraire(complet)
+        phrases, finale, appels = asyncio.run(_rejouer(jetons))
 
         erreurs = []
         if len(phrases) != nb_attendu:
             erreurs.append(f"{len(phrases)} phrase(s) au lieu de {nb_attendu}")
-        if replique.emotion != emo_attendue:
-            erreurs.append(f"emotion {replique.emotion!r} au lieu de {emo_attendue!r}")
-        if replique.verdict != verdict_attendu:
-            erreurs.append(f"verdict {replique.verdict!r} au lieu de {verdict_attendu!r}")
+        if finale is None:
+            erreurs.append("aucune Replique finale emise")
+        else:
+            if finale.emotion != emo_attendue:
+                erreurs.append(f"emotion {finale.emotion!r} au lieu de {emo_attendue!r}")
+            if finale.verdict != verdict_attendu:
+                erreurs.append(f"verdict {finale.verdict!r} au lieu de {verdict_attendu!r}")
+            if re.search(r"\[(EMOTION|VERDICT)", finale.texte):
+                erreurs.append("un tag subsiste dans le texte nettoye")
         if any("[" in p for p in phrases):
             erreurs.append("un tag a fuit dans le texte parle")
-        if re.search(r"\[(EMOTION|VERDICT)", replique.texte):
-            erreurs.append("un tag subsiste dans le texte nettoye")
+        if appels != 1:
+            erreurs.append(f"au_premier_jeton appele {appels} fois au lieu de 1")
 
         if erreurs:
             echecs += 1
@@ -112,7 +145,8 @@ def main() -> int:
             for i, p in enumerate(phrases, 1):
                 marque = "1er son" if i == 1 else "       "
                 print(f"           [{marque}] {p}")
-            print(f"           -> {replique.emotion} / {replique.verdict}")
+            if finale is not None:
+                print(f"           -> {finale.emotion} / {finale.verdict}")
 
     print()
     if echecs:

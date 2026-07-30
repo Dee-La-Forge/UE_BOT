@@ -25,7 +25,7 @@ import websockets
 from websockets.asyncio.server import ServerConnection, serve
 
 from .metrics import Mesure
-from .pipeline import MorceauAudio, Pipeline
+from .pipeline import DELAI_TTS, MorceauAudio, Pipeline
 
 _log = logging.getLogger("sidecar.serveur")
 
@@ -56,6 +56,14 @@ class Serveur:
 
         self._tache_intro: asyncio.Task | None = None
 
+        # La connexion Unreal courante. Une seule compte : quand Unreal
+        # redemarre (arret de PIE, crash), la nouvelle socket s'etablit
+        # parfois AVANT que l'ancienne ne meure (timeout TCP). Sans ce
+        # repere, le nettoyage de l'ancienne detruisait la session de la
+        # nouvelle — intro annulee, historique vide, verrou relache sous
+        # les pieds d'une session bien vivante.
+        self._ws_actif: ServerConnection | None = None
+
         # Tours de parole en cours ou en attente du verrou. Lances en taches
         # pour que la boucle de reception reste libre : avant, `await
         # _traiter_audio` la bloquait pendant tout un tour (STT + LLM + TTS,
@@ -85,8 +93,12 @@ class Serveur:
                     emotion: str = "Neutral") -> None:
         """Synthetise et streame une replique complete, hors pipeline LLM."""
         # to_thread : Piper est synchrone, et le laisser dans l'event loop
-        # rendrait le sidecar sourd pendant la synthese.
-        parole = await asyncio.to_thread(self.pipeline.tts.synthetiser, texte)
+        # rendrait le sidecar sourd pendant la synthese. Borne comme les
+        # etages du pipeline : un Piper fige ne doit pas gober le verrou.
+        parole = await asyncio.wait_for(
+            asyncio.to_thread(self.pipeline.tts.synthetiser, texte),
+            timeout=DELAI_TTS,
+        )
         await self._envoyer(ws, "parole.debut", texte=texte, emotion=emotion)
         await self._envoyer_audio(
             ws,
@@ -135,6 +147,16 @@ class Serveur:
 
     def _lancer_tour(self, ws: ServerConnection, brut: bytes) -> None:
         """Traite un enonce en tache, pour que la reception reste libre."""
+        # Au plus un tour qui joue et un tour qui attend. Sans cette borne,
+        # chaque enonce s'empilait sur le verrou de parole : un visiteur qui
+        # parle deux fois pendant une longue replique (echo du haut-parleur,
+        # vrai bavard) recevait des reponses a des enonces vieux de 10-20 s,
+        # et le compteur de questions avancait d'autant — spirale de latence
+        # garantie sur une borne bruyante.
+        en_vie = sum(1 for t in self._taches_parole if not t.done())
+        if en_vie >= 2:
+            _log.warning("tour deja en attente — enonce ignore")
+            return
         tache = asyncio.create_task(self._traiter_audio(ws, brut))
         self._taches_parole.add(tache)
         tache.add_done_callback(self._retirer_tache)
@@ -194,21 +216,40 @@ class Serveur:
         seq = 0
         a_parle = False
 
-        async for element in flux:
-            if isinstance(element, MorceauAudio):
-                if not a_parle:
-                    await self._envoyer(ws, "parole.debut", texte=element.texte,
-                                        emotion=self._emotion_pressentie())
-                    a_parle = True
-                await self._envoyer_audio(ws, element, seq)
-                seq += 1
-            else:
-                if a_parle:
+        try:
+            async for element in flux:
+                if isinstance(element, MorceauAudio):
+                    if not a_parle:
+                        await self._envoyer(ws, "parole.debut", texte=element.texte,
+                                            emotion=self._emotion_pressentie())
+                        a_parle = True
+                    await self._envoyer_audio(ws, element, seq)
+                    seq += 1
+                else:
+                    if a_parle:
+                        await self._envoyer(ws, "parole.fin")
+                    elif element.texte:
+                        await self._dire(ws, element.texte, element.emotion)
+                        a_parle = True
+                    await self._conclure(ws, element)
+
+        except Exception:
+            # Le flux tombe APRES des parole.audio deja emis : sans cloture,
+            # Unreal voyait arriver le parole.debut du repli sans jamais la
+            # fin de la replique en cours — deux repliques ouvertes a la
+            # fois, exactement les deux voix superposees qu'on a chassees.
+            if a_parle:
+                try:
                     await self._envoyer(ws, "parole.fin")
-                elif element.texte:
-                    await self._dire(ws, element.texte, element.emotion)
-                    a_parle = True
-                await self._conclure(ws, element)
+                except websockets.ConnectionClosed:
+                    pass
+            raise
+
+        finally:
+            # Ferme le generateur maintenant, pas a son ramassage : tant
+            # qu'il vit, le flux SSE vers llama.cpp reste ouvert et le
+            # modele continue de generer sur le GPU partage.
+            await flux.aclose()
 
         return a_parle
 
@@ -231,6 +272,16 @@ class Serveur:
                 _log.info("parole ignoree : entretien deja clos")
                 return
 
+            # La session a pu se fermer pendant l'attente du verrou
+            # (presence.perdue arrive entre la mise en file et l'execution).
+            # Executer ce tour quand meme ferait parler l'agent hors session
+            # — et si un nouveau visiteur venait d'arriver, l'echange
+            # parasite s'ecrirait dans SA session : historique pollue,
+            # machine a etats avancee avant meme son intro.
+            if not self._occupe.locked():
+                _log.info("parole ignoree : aucune session en cours")
+                return
+
             mesure = Mesure()
 
             try:
@@ -251,6 +302,14 @@ class Serveur:
                 # articule mal. « Repetez. » l'accuserait a tort et pour
                 # rien : on annonce plutot un poste ferme.
                 _log.exception("llama.cpp injoignable pendant le tour")
+                await self._replique_de_repli(ws, "indisponible")
+                return
+
+            except asyncio.TimeoutError:
+                # Un etage a depasse sa borne (STT ou TTS fige) : panne de
+                # la pile, pas faute du visiteur. Meme traitement qu'un LLM
+                # injoignable.
+                _log.exception("etage du pipeline hors delai")
                 await self._replique_de_repli(ws, "indisponible")
                 return
 
@@ -308,11 +367,39 @@ class Serveur:
 
     # -- Boucle de connexion ----------------------------------------------
 
+    def _liberer_session(self) -> None:
+        """Coupe les paroles, remet le scenario a zero, relache le verrou."""
+        self._annuler_paroles()
+        self.pipeline.reinitialiser()
+        if self._occupe.locked():
+            self._occupe.release()
+
     async def _connexion(self, ws: ServerConnection) -> None:
+        ancienne = self._ws_actif
+        self._ws_actif = ws
+        if ancienne is not None:
+            # Unreal a redemarre : la borne est mono-poste, la derniere
+            # connexion gagne. On libere la session de l'ancienne ICI —
+            # pas dans son finally, qui peut arriver de longues secondes
+            # plus tard (timeout TCP) et aurait sinon detruit la session
+            # que la nouvelle connexion vient d'ouvrir.
+            _log.warning("nouvelle connexion : l'ancienne est remplacee")
+            self._liberer_session()
+            await ancienne.close()
+
         _log.info("Unreal connecte")
         try:
             async for message in ws:
                 if isinstance(message, bytes):
+                    # Hors session, un enonce n'a pas de destinataire : c'est
+                    # un segment VAD parti apres presence.perdue (le visiteur
+                    # parlait en quittant la zone). Le traiter lancait un
+                    # tour fantome complet — STT, LLM, TTS — qui parlait dans
+                    # le vide, ou pire, s'ecrivait dans la session du
+                    # visiteur suivant.
+                    if not self._occupe.locked():
+                        _log.info("trame audio hors session — ignoree")
+                        continue
                     # En tache, jamais attendu ici : la reception doit rester
                     # capable de lire un presence.perdue pendant le tour.
                     self._lancer_tour(ws, message)
@@ -334,13 +421,15 @@ class Serveur:
             # crash, arret de PIE, cable debranche. Sans ce nettoyage, _occupe
             # restait tenu pour toujours et chaque presence.detectee suivante
             # etait ignoree — plus aucune session ne demarrait jusqu'au
-            # redemarrage manuel du sidecar. La borne est mono-poste : une
-            # connexion qui tombe emporte la session, quelle qu'elle soit.
-            self._annuler_paroles()
-            self.pipeline.reinitialiser()
-            if self._occupe.locked():
-                self._occupe.release()
-            _log.info("connexion fermee — session liberee")
+            # redemarrage manuel du sidecar. Mais on ne nettoie QUE si cette
+            # connexion est encore la connexion active : une socket remplacee
+            # qui agonise n'a plus le droit de toucher a la session.
+            if self._ws_actif is ws:
+                self._ws_actif = None
+                self._liberer_session()
+                _log.info("connexion fermee — session liberee")
+            else:
+                _log.info("connexion remplacee fermee — session intacte")
 
     async def _router(self, ws: ServerConnection, evenement: str) -> None:
         if evenement == "presence.detectee":
@@ -348,6 +437,10 @@ class Serveur:
                 _log.warning("presence signalee alors qu'une session court deja")
                 return
             await self._occupe.acquire()
+            # Ceinture et bretelles : si un tour d'une session precedente
+            # traine encore (il sera de toute facon ignore par ses propres
+            # gardes), on le coupe avant d'ouvrir la session neuve.
+            self._annuler_paroles()
             self.pipeline.reinitialiser()
             await self._envoyer(ws, "session.demarree", avatar=self._avatar)
             _log.info("session demarree")
@@ -375,10 +468,7 @@ class Serveur:
             # que de continuer a parler dans le vide. C'est possible parce
             # que les tours tournent en taches — la reception n'attend plus
             # la fin d'une replique pour lire ce message.
-            self._annuler_paroles()
-            self.pipeline.reinitialiser()
-            if self._occupe.locked():
-                self._occupe.release()
+            self._liberer_session()
             _log.info("session reinitialisee (%s)", evenement)
 
         else:
@@ -396,6 +486,10 @@ class Serveur:
                 self.pipeline.llm.url,
             )
 
-        async with serve(self._connexion, hote, port, max_size=None):
+        # max_size : ~2 Mo, soit plus d'une minute d'audio 16 kHz PCM16.
+        # Aucun segment VAD legitime n'approche cette taille ; au-dela,
+        # c'est un client accidentel ou malveillant sur le loopback, et
+        # None l'aurait laisse allouer sans limite.
+        async with serve(self._connexion, hote, port, max_size=2 * 1024 * 1024):
             _log.info("sidecar a l'ecoute sur ws://%s:%d", hote, port)
             await asyncio.Future()   # tourne jusqu'a interruption

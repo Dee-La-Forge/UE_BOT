@@ -66,8 +66,11 @@ async def principal() -> int:
 
     try:
         await serveur.demarrer()
-    except KeyboardInterrupt:
-        log.info("arret demande")
+    finally:
+        # Un Ctrl+C arrive ici en CancelledError sous asyncio.run — jamais
+        # en KeyboardInterrupt. Le finally ferme les clients HTTP dans tous
+        # les cas, arret propre ou non.
+        await serveur.pipeline.fermer()
     return 0
 
 

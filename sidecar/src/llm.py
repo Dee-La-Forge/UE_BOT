@@ -13,14 +13,23 @@ from __future__ import annotations
 
 import json
 import re
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass
 from pathlib import Path
 
 import httpx
 
-# Fin de phrase : ponctuation forte suivie d'un espace ou de la fin du flux.
-_FIN_DE_PHRASE = re.compile(r"[.!?…]+[\s»\"']*")
+# Fin de phrase : ponctuation forte, guillemets eventuels, puis un espace.
+#
+# L'espace final est EXIGE : l'ancien motif coupait « Vous restez 2.5
+# jours ? » apres « 2. » et « M. Dupont » apres « M. » — le TTS recevait des
+# fragments et la prosodie cassait au milieu d'un nombre. Le lookahead
+# (?!\d) ecarte les decimales, les lookbehinds les civilites courantes.
+# En flux, attendre l'espace revient a attendre le chunk suivant ; le reste
+# sans ponctuation part de toute facon a la fin du flux.
+_FIN_DE_PHRASE = re.compile(
+    r"(?<!\bM)(?<!\bMme)(?<!\bDr)(?<!\bMlle)[.!?…]+(?!\d)[\s»\"']*\s"
+)
 
 # Tags de fin de replique, non destines a etre prononces.
 _TAG_EMOTION = re.compile(r"\[EMOTION:(\w+)\]")
@@ -57,7 +66,13 @@ class ClientLLM:
                 if not ligne.lstrip().startswith("#")
             ).strip()
 
-        self._client = httpx.AsyncClient(timeout=httpx.Timeout(60.0, connect=5.0))
+        # Le delai par defaut porte sur CHAQUE lecture, pas sur le total :
+        # un llama.cpp sain streame un chunk toutes les quelques dizaines de
+        # ms, et n_predict borne le total. 60 s laissaient donc un serveur
+        # fige tenir le verrou de parole une minute entiere avant la panne
+        # franche ; 20 s suffisent tres largement a distinguer « il
+        # reflechit » de « il est mort ».
+        self._client = httpx.AsyncClient(timeout=httpx.Timeout(20.0, connect=5.0))
 
     async def disponible(self) -> bool:
         """Verifie que llama.cpp server repond, avant de lancer une session."""
@@ -68,12 +83,18 @@ class ClientLLM:
             return False
 
     async def phrases(
-        self, prompt: str, grammaire: str = "entretien"
+        self, prompt: str, grammaire: str = "entretien",
+        au_premier_jeton: Callable[[], None] | None = None,
     ) -> AsyncIterator[tuple[str, Replique | None]]:
         """Emet chaque phrase des qu'elle est complete.
 
         `grammaire` selectionne le jeu de verdicts autorises : "entretien"
         interdit toute cloture, "verdict" la permet.
+
+        `au_premier_jeton` est rappele a l'arrivee du premier contenu SSE :
+        c'est le seul endroit qui VOIT le premier token. La mesure etait
+        posee avant a la premiere phrase complete — « LLM (1er token) »
+        mentait dans tous les releves, et « LLM (1re phrase) » valait 0.
 
         Produit des tuples (phrase, None) au fil de l'eau, puis un dernier
         ("", Replique) portant le texte complet et les tags extraits.
@@ -105,6 +126,9 @@ class ClientLLM:
 
                 morceau = evenement.get("content", "")
                 if morceau:
+                    if au_premier_jeton is not None:
+                        au_premier_jeton()
+                        au_premier_jeton = None
                     complet += morceau
 
                     # Des le premier crochet, on quitte la zone parlee.

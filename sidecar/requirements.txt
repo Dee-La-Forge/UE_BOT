@@ -7,7 +7,7 @@
 
 # --- STT (CPU) ---
 faster-whisper==1.0.3
-requests           # dependance transitive de faster-whisper, absente de ses metadonnees
+requests==2.32.3   # dependance transitive de faster-whisper, absente de ses metadonnees
 
 # --- TTS (CPU) ---
 # 1.6.0 minimum : les versions <= 1.2 dependent de piper-phonemize, qui n'a

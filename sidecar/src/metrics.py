@@ -44,7 +44,6 @@ class Mesure:
             "llm_premier_token": self.depuis("stt_fin", "llm_premier_token"),
             "llm_premiere_phrase": self.depuis("llm_premier_token", "llm_premiere_phrase"),
             "tts_premier_chunk": self.depuis("llm_premiere_phrase", "tts_premier_chunk"),
-            "lipsync": self.depuis("tts_premier_chunk", "lipsync_pret"),
             "TOTAL_premier_son": self.temps_premier_son,
             "total_tour_complet": self._marques.get("fin"),
         }
@@ -71,7 +70,6 @@ class Mesure:
             "llm_premier_token": "LLM (1er token)",
             "llm_premiere_phrase": "LLM (1re phrase)",
             "tts_premier_chunk": "TTS (1er chunk)",
-            "lipsync": "Lipsync (NeuroSync)",
         }
         for cle, etiquette in etiquettes.items():
             val = r.get(cle)

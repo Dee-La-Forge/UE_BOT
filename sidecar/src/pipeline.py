@@ -34,6 +34,17 @@ from .stt import Transcripteur
 from .texte import nettoyer_pour_tts
 from .tts import Synthetiseur
 
+# Bornes de temps par etage. Un moteur qui se fige (driver GPU, OOM
+# ctranslate2) tenait le verrou de parole indefiniment : la borne restait
+# muette pour toujours, et chaque incident abandonnait un thread bloque —
+# l'executor (~32 threads) finissait par s'epuiser sur des heures de
+# fonctionnement. Le depassement vaut panne franche : le serveur repond par
+# le repli « indisponible » et la session reprend la main.
+# NB : wait_for abandonne l'ATTENTE, pas le thread. Un thread vraiment fige
+# reste perdu — c'est accepte, l'alternative etait le gel complet.
+DELAI_STT = 20.0   # Whisper medium, pire cas CPU sur un long segment VAD
+DELAI_TTS = 10.0   # Piper met ~0,2 s par phrase : 10 s, c'est une panne
+
 
 @dataclass
 class MorceauAudio:
@@ -204,8 +215,9 @@ class Pipeline:
         # centaines de ms a plusieurs secondes. L'appeler directement gelait
         # TOUT l'event loop — ping/pong websockets compris, et surtout le
         # presence.perdue d'un visiteur qui part pendant la transcription.
-        texte_visiteur = await asyncio.to_thread(
-            self.stt.transcrire, audio_visiteur, taux
+        texte_visiteur = await asyncio.wait_for(
+            asyncio.to_thread(self.stt.transcrire, audio_visiteur, taux),
+            timeout=DELAI_STT,
         )
         m.marquer("stt_fin")
 
@@ -289,14 +301,17 @@ class Pipeline:
         finale: Replique | None = None
         prononcees: list[str] = []
 
+        flux_llm = self.llm.phrases(
+            prompt, grammaire,
+            au_premier_jeton=lambda: m.marquer("llm_premier_token"),
+        )
         try:
-            async for phrase, replique in self.llm.phrases(prompt, grammaire):
+            async for phrase, replique in flux_llm:
                 if replique is not None:
                     finale = replique
                     break
 
                 if premier:
-                    m.marquer("llm_premier_token")
                     m.marquer("llm_premiere_phrase")
 
                 # Filtre deterministe : un 3B produit de l'ecriture inclusive et
@@ -308,7 +323,10 @@ class Pipeline:
                 # Meme regle que pour le STT : Piper est synchrone, on le sort
                 # de l'event loop pour que le sidecar reste joignable pendant
                 # qu'il parle.
-                parole = await asyncio.to_thread(self.tts.synthetiser, prononcable)
+                parole = await asyncio.wait_for(
+                    asyncio.to_thread(self.tts.synthetiser, prononcable),
+                    timeout=DELAI_TTS,
+                )
 
                 if premier:
                     m.marquer("tts_premier_chunk")
@@ -341,6 +359,14 @@ class Pipeline:
                     len(prononcees),
                 )
             raise
+
+        finally:
+            # Fermer le flux TOUT DE SUITE, pas au ramassage du generateur :
+            # tant qu'il vit, la requete SSE reste ouverte et llama.cpp
+            # continue de generer — sur le meme GPU qu'Unreal et que l'intro
+            # du visiteur suivant. C'est le cas de l'annulation en pleine
+            # replique (presence.perdue pendant un ws.send).
+            await flux_llm.aclose()
 
         m.marquer("fin")
 
