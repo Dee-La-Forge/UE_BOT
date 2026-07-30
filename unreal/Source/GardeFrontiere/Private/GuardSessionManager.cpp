@@ -368,26 +368,28 @@ void AGuardSessionManager::TransmettreParoleVisiteur(
 	// que l'agent est audible est donc jete, plus une marge apres la fin de
 	// lecture, le temps que la reverberation de la salle retombe.
 	const double Maintenant = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.0;
-	if (AgentAudible())
+	const bool bFenetreSourde =
+		AgentAudible()
+		|| (Maintenant - InstantAgentAudible < MargeEchoApresReplique);
+	if (bFenetreSourde)
 	{
 		// Le segment peut aussi etre une VRAIE reponse donnee pendant la
 		// queue de lecture : on la perd (pas de mise en attente ici), mais
-		// on ne la punit pas — l'abandon est repousse, le visiteur s'est
-		// manifeste. Sans cela, un visiteur dont les reponses tombaient
-		// dans les fenetres sourdes etait abandonne a 30 s en pleine
-		// conversation. (InstantAgentAudible n'est PLUS estampille ici :
-		// c'est le suivi de lecture qui fait foi, et l'estampille sur rejet
-		// repoussait la marge devant un visiteur qui reessayait.)
+		// on ne la punit pas. L'abandon est repousse — le visiteur s'est
+		// manifeste — et la relance armee a parole.fin est ANNULEE : sans
+		// cela, l'agent sommait de repondre quelqu'un qui venait de le
+		// faire, la « relance sur silence » entrait dans l'historique, et
+		// l'entretien avancait sur un silence qui n'avait pas eu lieu.
+		// (InstantAgentAudible n'est PLUS estampille ici : le suivi de
+		// lecture fait foi, et l'estampille sur rejet repoussait la marge
+		// devant un visiteur qui reessayait.)
 		ArmerAbandon();
+		if (UWorld* Monde = GetWorld())
+		{
+			Monde->GetTimerManager().ClearTimer(MinuterieRelance);
+		}
 		UE_LOG(LogGardeFrontiere, Log,
-			TEXT("Segment micro ignore : l'agent parle encore — echo probable"));
-		return;
-	}
-	if (Maintenant - InstantAgentAudible < MargeEchoApresReplique)
-	{
-		ArmerAbandon();
-		UE_LOG(LogGardeFrontiere, Log,
-			TEXT("Segment micro ignore : lecture finie il y a moins de %.1f s"),
+			TEXT("Segment micro ignore : fenetre sourde (lecture ou marge de %.1f s)"),
 			MargeEchoApresReplique);
 		return;
 	}
@@ -443,7 +445,21 @@ void AGuardSessionManager::TransmettreParoleVisiteur(
 		{
 			InstantDernierRepetez = Maintenant;
 			OnRepliqueDeSecours.Broadcast(TEXT("Repetez."));
+			ArmerSuiviLecture();   // pas de parole.fin pour les secours
 		}
+	}
+}
+
+void AGuardSessionManager::ArmerSuiviLecture()
+{
+	if (UWorld* Monde = GetWorld())
+	{
+		InstantAgentAudible = Monde->GetTimeSeconds();
+		InstantDebutSuivi = InstantAgentAudible;
+		bLectureObservee = false;
+		Monde->GetTimerManager().SetTimer(
+			MinuterieSuiviLecture, this, &AGuardSessionManager::SurSuiviLecture,
+			0.2f, true);
 	}
 }
 
@@ -457,15 +473,27 @@ void AGuardSessionManager::SurSuiviLecture()
 
 	if (AgentAudible())
 	{
-		// La lecture court encore : la marge anti-echo repart d'ici.
+		// La lecture court : la marge anti-echo repart d'ici.
+		bLectureObservee = true;
 		InstantAgentAudible = Monde->GetTimeSeconds();
+		return;
 	}
-	else
+
+	// Rien d'audible. Tant qu'on n'a JAMAIS entendu la lecture, c'est
+	// probablement qu'elle n'a pas encore commence — sur Audio2Face, le son
+	// part 0,7-1,4 s apres parole.fin. S'arreter a la premiere sonde muette
+	// figeait la marge sur parole.fin, et l'echo de chaque replique courte
+	// repassait au travers. On patiente donc le delai de grace ; si rien ne
+	// vient, il n'y avait rien a suivre.
+	if (!bLectureObservee
+		&& Monde->GetTimeSeconds() - InstantDebutSuivi < GraceSuiviLecture)
 	{
-		// Fin reelle du son : la derniere estampille fait desormais foi,
-		// le sondage n'a plus rien a suivre.
-		Monde->GetTimerManager().ClearTimer(MinuterieSuiviLecture);
+		return;
 	}
+
+	// Fin reelle du son (ou lecture jamais venue) : la derniere estampille
+	// fait desormais foi, le sondage n'a plus rien a suivre.
+	Monde->GetTimerManager().ClearTimer(MinuterieSuiviLecture);
 }
 
 bool AGuardSessionManager::AgentAudible()
@@ -773,6 +801,7 @@ void AGuardSessionManager::OuvrirLaScene()
 	{
 		// Mode degrade : la borne accueille quand meme.
 		OnRepliqueDeSecours.Broadcast(TEXT("Papiers. Garde-frontiere."));
+		ArmerSuiviLecture();   // pas de parole.fin pour les secours
 	}
 }
 
@@ -871,13 +900,7 @@ void AGuardSessionManager::SurParoleFin()
 	// sondage, pour que la marge anti-echo parte de la fin reelle du son
 	// et non du parole.fin. Une marge assise sur parole.fin laissait
 	// passer tout echo clos apres la fin de lecture.
-	if (UWorld* Monde = GetWorld())
-	{
-		InstantAgentAudible = Monde->GetTimeSeconds();
-		Monde->GetTimerManager().SetTimer(
-			MinuterieSuiviLecture, this, &AGuardSessionManager::SurSuiviLecture,
-			0.2f, true);
-	}
+	ArmerSuiviLecture();
 
 	ArmerAbandon();
 
@@ -982,15 +1005,40 @@ void AGuardSessionManager::SurPanneIA(const FString& Raison)
 	bRepliqueEnCours = false;
 	FermerSessionA2F();
 
+	// Et on COUPE la lecture en cours : la replique morte continuait de
+	// jouer sous l'annonce de panne — deux voix superposees — pendant que
+	// la marge anti-echo, jamais re-ancree sur ce chemin, datait encore du
+	// parole.fin precedent : l'echo de l'annonce passait au micro, et le
+	// mode degrade repondait « Repetez. » a sa propre voix, en boucle,
+	// chaque iteration repoussant l'abandon.
+	if (Avatars)
+	{
+		if (UACEAudioCurveSourceComponent* Source = Avatars->TrouverComposantACE())
+		{
+			Source->Stop();
+		}
+	}
+	if (Voix)
+	{
+		Voix->Interrompre();
+	}
+
 	// Une borne muette avec un visiteur planté devant est le seul echec
-	// vraiment couteux. On parle, meme mal — mais UNE fois par session :
+	// vraiment couteux. On parle, meme mal — mais UNE fois par panne :
 	// chaque echec de reconnexion repasse par ici toutes les
 	// DelaiReconnexion secondes, et l'agent repetait « Poste ferme » en
 	// boucle devant le meme visiteur, jusqu'a six fois avant l'abandon.
-	if (Phase != EGuardPhase::Veille && !bPanneAnnoncee)
+	if (Phase != EGuardPhase::Veille)
 	{
-		bPanneAnnoncee = true;
-		OnRepliqueDeSecours.Broadcast(TEXT("Poste ferme. Repassez plus tard."));
+		if (!bPanneAnnoncee)
+		{
+			bPanneAnnoncee = true;
+			OnRepliqueDeSecours.Broadcast(TEXT("Poste ferme. Repassez plus tard."));
+		}
+
+		// Les repliques de secours n'ont pas de parole.fin : sans cet
+		// armement, leur lecture n'avait aucune origine de marge anti-echo.
+		ArmerSuiviLecture();
 	}
 
 	if (UWorld* Monde = GetWorld())

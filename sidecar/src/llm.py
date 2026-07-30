@@ -12,12 +12,15 @@ C'est de la que vient le gain de latence — pas du fait d'etre "local".
 from __future__ import annotations
 
 import json
+import logging
 import re
 from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass
 from pathlib import Path
 
 import httpx
+
+_log = logging.getLogger("sidecar.llm")
 
 # Fin de phrase : ponctuation forte, guillemets eventuels, puis un espace.
 #
@@ -109,6 +112,15 @@ class ClientLLM:
         }
         if (g := self._grammaires.get(grammaire)) is not None:
             charge["grammar"] = g
+        else:
+            # Une cle de grammaire absente (faute de frappe dans config.yaml)
+            # generait SANS contrainte, sans un mot : plus de bornes de
+            # questions, plus de format de tags garanti — et le premier
+            # crochet venu de la prose coupait la parole pour de bon.
+            _log.warning(
+                "grammaire '%s' introuvable — generation SANS contrainte",
+                grammaire,
+            )
 
         complet = ""      # tout ce que le modele a produit, tags compris
         tampon = ""       # texte parle en attente d'une fin de phrase

@@ -483,6 +483,14 @@ private:
 	// Suit la fin REELLE de la lecture apres parole.fin (tampon ACE).
 	UFUNCTION() void SurSuiviLecture();
 
+	/**
+	 * (Re)demarre le suivi de lecture : estampille l'origine de la marge
+	 * anti-echo et arme la sonde. A appeler a CHAQUE source de parole qui
+	 * n'a pas de parole.fin propre — repliques de secours comprises, elles
+	 * n'en ont jamais eu et restaient sans origine de marge.
+	 */
+	void ArmerSuiviLecture();
+
 	/** Glitch puis permutation — ou permutation directe sans effet. */
 	void LancerSubstitution();
 
@@ -543,6 +551,23 @@ private:
 
 	/** Dernier instant ou l'agent a ete constate audible (anti-echo). */
 	double InstantAgentAudible = -1.0e9;
+
+	/** Le suivi de lecture a-t-il deja ENTENDU quelque chose ? */
+	bool bLectureObservee = false;
+
+	/** Depart du suivi en cours, pour borner l'attente d'un son qui ne vient pas. */
+	double InstantDebutSuivi = 0.0;
+
+	/**
+	 * Temps laisse a la lecture pour DEMARRER apres l'armement du suivi.
+	 *
+	 * Sur le chemin Audio2Face, le son ne part que 0,7-1,4 s apres
+	 * parole.fin (c'est la fermeture de session qui purge les derniers
+	 * echantillons, et l'inference suit). Conclure « rien ne joue » a la
+	 * premiere sonde muette figeait la marge anti-echo sur parole.fin — et
+	 * l'echo de chaque replique courte repassait au travers.
+	 */
+	static constexpr double GraceSuiviLecture = 2.5;
 
 	/** Dernier « Repetez. » du mode degrade, pour ne pas le marteler. */
 	double InstantDernierRepetez = -1.0e9;

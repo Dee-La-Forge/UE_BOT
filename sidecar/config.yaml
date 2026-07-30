@@ -71,10 +71,10 @@ tts:
                                # parole.audio fait foi cote Unreal
   vitesse: 1.0
   volume: 1.0
-  # Alignements phonemes actives au chargement (patch du modele ONNX). Ils
-  # ne servaient qu'au lipsync de repli par visemes MHF_*, chemin supprime :
-  # le lipsync vient d'Audio2Face, cote Unreal (voir docs/LIPSYNC-DECISION.md).
-  phonemes_pour_repli: false
+  # (la cle `phonemes_pour_repli` — alignements pour le lipsync de repli par
+  # visemes MHF_* — est RETIREE avec tout son chemin : le lipsync vient
+  # d'Audio2Face, cote Unreal. La remettre a true fait refuser le demarrage,
+  # volontairement.)
 
 # Le bloc `lipsync:` (NeuroSync + repli visemes) a ete retire le 30/07/2026 :
 # aucune de ses cles n'etait lue par le code, NeuroSync ne repond pas a

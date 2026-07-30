@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import AsyncIterator
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
@@ -48,15 +48,16 @@ DELAI_TTS = 10.0   # Piper met ~0,2 s par phrase : 10 s, c'est une panne
 
 @dataclass
 class MorceauAudio:
-    """Un fragment de parole pret a etre joue et anime."""
+    """Un fragment de parole pret a etre joue.
+
+    L'animation ne transite plus par ici : Audio2Face anime le visage cote
+    Unreal, directement depuis la trame audio.
+    """
 
     pcm: np.ndarray
     taux: int
     texte: str
     premier: bool
-    # Suite de poses MHF_* (nom, debut_s, fin_s), pour le lipsync de repli
-    # quand NeuroSync est indisponible. Vide sinon.
-    visemes: list[tuple[str, float, float]] = field(default_factory=list)
 
 
 class Pipeline:
@@ -337,7 +338,6 @@ class Pipeline:
                     taux=parole.taux,
                     texte=prononcable,
                     premier=premier,
-                    visemes=parole.visemes,
                 )
                 premier = False
                 prononcees.append(prononcable)

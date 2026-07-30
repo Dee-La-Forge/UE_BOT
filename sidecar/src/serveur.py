@@ -62,6 +62,13 @@ class Serveur:
         # distingue « l'agent relance » d'« un enonce attend ».
         self._tache_relance: asyncio.Task | None = None
 
+        # References fortes sur les fermetures d'anciennes sockets :
+        # asyncio ne retient les taches que faiblement, et une fermeture
+        # orpheline (le remplacant meurt avant qu'elle n'aboutisse) pouvait
+        # etre detruite en plein vol — socket et descripteur fuites sur une
+        # borne qui enchaine les redemarrages de PIE.
+        self._taches_fermeture: set[asyncio.Task] = set()
+
         # La connexion Unreal courante. Une seule compte : quand Unreal
         # redemarre (arret de PIE, crash), la nouvelle socket s'etablit
         # parfois AVANT que l'ancienne ne meure (timeout TCP). Sans ce
@@ -114,8 +121,15 @@ class Serveur:
             asyncio.to_thread(self.pipeline.tts.synthetiser, texte),
             timeout=DELAI_TTS,
         )
-        await self._envoyer(ws, "parole.debut", texte=texte, emotion=emotion)
+        # L'envoi du parole.debut vit DANS le try : une annulation frappant
+        # cet await peut arriver alors que la trame est deja partie sur le
+        # transport — Unreal a le debut, nous avons l'exception. Le laisser
+        # hors du bloc recreait exactement le trou que ce finally pretend
+        # fermer. Le prix : un parole.fin sans debut si l'annulation frappe
+        # AVANT le depart reel — inoffensif cote Unreal, la ou un debut sans
+        # fin verrouille le micro.
         try:
+            await self._envoyer(ws, "parole.debut", texte=texte, emotion=emotion)
             await self._envoyer_audio(
                 ws,
                 MorceauAudio(pcm=parole.pcm, taux=parole.taux, texte=texte,
@@ -125,8 +139,11 @@ class Serveur:
         finally:
             try:
                 await self._envoyer(ws, "parole.fin")
-            except websockets.ConnectionClosed:
-                pass   # socket morte : Unreal fera son propre menage
+            except (websockets.ConnectionClosed, asyncio.CancelledError):
+                # Socket morte, ou seconde annulation pendant la cloture :
+                # plus rien a garantir ici. L'annulation d'origine, elle,
+                # repart apres le finally.
+                pass
 
     async def _replique_de_repli(self, ws: ServerConnection, cle: str) -> None:
         """Fait parler l'agent malgre une panne, plutot que de le laisser muet."""
@@ -411,6 +428,13 @@ class Serveur:
 
     # -- Boucle de connexion ----------------------------------------------
 
+    def _oublier_fermeture(self, tache: asyncio.Task) -> None:
+        """Meme discipline que _retirer_tache : rien ne tombe en silence."""
+        self._taches_fermeture.discard(tache)
+        if not tache.cancelled() and tache.exception() is not None:
+            _log.warning("fermeture de l'ancienne connexion : %r",
+                         tache.exception())
+
     def _liberer_session(self) -> None:
         """Coupe les paroles, remet le scenario a zero, relache le verrou."""
         self._annuler_paroles()
@@ -437,8 +461,8 @@ class Serveur:
             _log.warning("nouvelle connexion : l'ancienne est remplacee")
             self._liberer_session()
             fermeture = asyncio.create_task(ancienne.close())
-            fermeture.add_done_callback(
-                lambda t: t.cancelled() or t.exception())
+            self._taches_fermeture.add(fermeture)
+            fermeture.add_done_callback(self._oublier_fermeture)
 
         _log.info("Unreal connecte")
         try:
@@ -511,6 +535,18 @@ class Serveur:
             self._annuler_paroles()
             self.pipeline.reinitialiser()
             await self._envoyer(ws, "session.demarree", avatar=self._avatar)
+
+            # Re-verifie APRES l'envoi : ce send peut suspendre (pause de
+            # flow-control) et la connexion etre remplacee pendant qu'il
+            # dort — le remplacement a alors deja libere la session, et
+            # creer l'intro ici fabriquait une intro fantome liee a une
+            # socket morte, qui pouvait ecraser _tache_intro et rendre la
+            # vraie intro inannulable. Ne PAS relacher le verrou : il ne
+            # nous appartient plus (libere par le remplacement, peut-etre
+            # deja repris par la nouvelle session).
+            if self._ws_actif is not ws:
+                _log.warning("connexion remplacee pendant l'ouverture — intro annulee")
+                return
             _log.info("session demarree")
 
             # L'intro tourne A COTE de la boucle de reception, pas dedans.

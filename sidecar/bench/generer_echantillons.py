@@ -56,7 +56,7 @@ def main() -> int:
         chemin = dossier / f"{nom}.wav"
         ecrire_wav(chemin, parole.pcm, parole.taux)
         duree = len(parole.pcm) / parole.taux
-        print(f"  {chemin.name:<18} {duree:>5.1f} s   {len(parole.visemes):>3} visemes")
+        print(f"  {chemin.name:<18} {duree:>5.1f} s")
         print(f"                     \"{texte}\"")
 
     print(f"\n  {len(REPONSES)} echantillons dans {dossier.relative_to(RACINE)}")

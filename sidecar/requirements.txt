@@ -11,8 +11,7 @@ requests==2.32.3   # dependance transitive de faster-whisper, absente de ses met
 
 # --- TTS (CPU) ---
 # 1.6.0 minimum : les versions <= 1.2 dependent de piper-phonemize, qui n'a
-# aucun wheel Windows pour Python 3.12. La 1.6 s'en affranchit et expose en
-# prime les alignements de phonemes (utiles au lipsync de repli).
+# aucun wheel Windows pour Python 3.12. La 1.6 s'en affranchit.
 piper-tts==1.6.0
 
 # --- Client LLM (HTTP/SSE vers llama.cpp server) ---

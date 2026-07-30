@@ -48,8 +48,8 @@ class Transcripteur:
         # rechargement de self._modele. Sans ce verrou, le tour suivant
         # lancait une seconde inference sur le meme modele pendant que le
         # premier thread le remplacait et liberait l'ancien — use-after-free
-        # dans ctranslate2, crash dur du sidecar. Le thread suivant attend
-        # ici ; s'il attend trop, c'est le wait_for d'au-dessus qui tranche.
+        # dans ctranslate2, crash dur du sidecar. L'attente du verrou est
+        # bornee (ATTENTE_VERROU) : voir transcrire().
         self._verrou = threading.Lock()
         self._modele = self._charger()
 
@@ -63,6 +63,9 @@ class Transcripteur:
     # Au-dela de ce nombre d'echecs d'inference d'affilee, le GPU est
     # considere durablement inutilisable, meme si les chargements reussissent.
     ECHECS_AVANT_CPU = 3
+
+    # Attente maximale du verrou d'inference — voir transcrire().
+    ATTENTE_VERROU = 2.0
 
     def _basculer_cpu(self) -> None:
         _log.warning("bascule definitive du STT sur CPU")
@@ -109,8 +112,22 @@ class Transcripteur:
         if audio.dtype != np.float32:
             audio = audio.astype(np.float32)
 
-        with self._verrou:
+        # Attente BORNEE. Le verrou n'est disputable que si une inference
+        # abandonnee par le wait_for du pipeline tourne encore — le serveur
+        # serialise deja les tours. Attendre sans limite empilait un thread
+        # de l'executor partage par enonce derriere une inference gelee,
+        # jusqu'a l'assecher : plus aucun to_thread ne partait, TTS et
+        # repliques de secours compris — borne muette, sans crash ni trace.
+        # Et attendre 20 s gaspillait le budget du tour dans la file avant
+        # de lancer une inference que plus personne ne lirait.
+        # TimeoutError : meme traitement qu'un etage hors delai (repli
+        # « indisponible ») — alias d'asyncio.TimeoutError depuis 3.11.
+        if not self._verrou.acquire(timeout=self.ATTENTE_VERROU):
+            raise TimeoutError("inference STT precedente encore en cours")
+        try:
             return self._transcrire_verrouille(audio, taux)
+        finally:
+            self._verrou.release()
 
     def _transcrire_verrouille(self, audio: np.ndarray, taux: int) -> str:
         if taux != 16000:
