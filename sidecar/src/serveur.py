@@ -602,6 +602,19 @@ class Serveur:
                 "llama.cpp injoignable sur %s — la borne demarre en mode degrade",
                 self.pipeline.llm.url,
             )
+        else:
+            # Le premier visiteur ne doit pas payer l'evaluation du bloc
+            # systeme. Sans cela, sa replique d'accueil arrivait apres le
+            # delai d'abandon d'Unreal, et la borne se fermait avant
+            # d'avoir parle — c'est pourtant le visiteur qui compte le
+            # plus. On paie ici, pendant que la salle est vide.
+            _log.info("prechauffage du cache de prompt...")
+            duree = await self.pipeline.prechauffer()
+            if duree is None:
+                _log.warning("prechauffage impossible — premier tour plus lent")
+            else:
+                _log.info("cache pret en %.1f s — le premier visiteur sera servi vite",
+                          duree)
 
         # max_size : ~2 Mo, soit plus d'une minute d'audio 16 kHz PCM16.
         # Aucun segment VAD legitime n'approche cette taille ; au-dela,

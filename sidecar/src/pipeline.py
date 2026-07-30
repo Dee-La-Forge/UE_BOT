@@ -434,5 +434,13 @@ class Pipeline:
 
         yield finale
 
+    async def prechauffer(self) -> float | None:
+        """Paye le cout du prefixe systeme avant l'arrivee du visiteur.
+
+        Utilise le prompt de l'INTRO — celui de la premiere replique de
+        chaque session, donc exactement le prefixe qu'on veut en cache.
+        """
+        return await self.llm.prechauffer(self._construire_prompt(""))
+
     async def fermer(self) -> None:
         await self.llm.fermer()

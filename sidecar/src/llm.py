@@ -14,6 +14,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import time
 from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -110,6 +111,40 @@ class ClientLLM:
         # temps qu'une borne peut se permettre de rester muette.
         delai = float(config.get("delai_lecture", 45.0))
         self._client = httpx.AsyncClient(timeout=httpx.Timeout(delai, connect=5.0))
+
+    async def prechauffer(self, prompt: str) -> float | None:
+        """Fait evaluer le prefixe systeme AVANT le premier visiteur.
+
+        llama.cpp met en cache le prefixe commun aux tours (`cache_prompt`),
+        mais il faut bien qu'un premier tour le paye. Ce cout tombait donc
+        sur la premiere replique de la premiere session : plus de 31 s
+        relevees le 30/07/2026 sur un GPU modeste — au-dela du delai
+        d'abandon d'Unreal, qui fermait la session avant que l'agent
+        n'ouvre la bouche. Le visiteur d'ouverture, celui qui compte le
+        plus dans un musee, etait le seul a etre mal servi.
+
+        On genere donc UN jeton a vide au demarrage. Le contenu n'a aucune
+        importance : seul le cache compte.
+
+        Rend la duree en secondes, ou None si le prechauffage a echoue —
+        auquel cas la borne demarre quand meme, simplement plus lente au
+        premier tour.
+        """
+        depart = time.perf_counter()
+        try:
+            r = await self._client.post(
+                f"{self.url}/completion",
+                json={
+                    "prompt": prompt,
+                    "n_predict": 1,
+                    "temperature": 0,
+                    "cache_prompt": True,
+                },
+            )
+            r.raise_for_status()
+        except (httpx.HTTPError, OSError):
+            return None
+        return time.perf_counter() - depart
 
     async def disponible(self) -> bool:
         """Verifie que llama.cpp server repond, avant de lancer une session."""
