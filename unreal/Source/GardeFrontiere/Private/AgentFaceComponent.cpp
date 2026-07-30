@@ -44,12 +44,19 @@ bool UAgentFaceComponent::EcrireFlottant(FName Nom, float Valeur)
 		// false et personne ne le lit. C'est ce silence qui a masque un
 		// chemin de lipsync entier ecrivant dans le vide. On le dit — une
 		// fois par nom, sinon ce serait dix lignes par seconde.
+		//
+		// En VERBOSE et non en Warning : avec Face_AnimBP, les sept
+		// variables de Convai sont absentes, et c'est ATTENDU — l'emotion
+		// passe par Audio2Face (docs/EMOTIONS-VS-LIPSYNC.md). Sept
+		// avertissements par session pour un fonctionnement nominal, c'est
+		// le genre de bruit qui fait qu'on cesse de lire les journaux. Le
+		// resume d'AppliquerMelange, lui, reste en Warning : il ne se
+		// declenche que si RIEN ne s'ecrit, ce qui est un vrai defaut.
 		if (!NomsIntrouvables.Contains(Nom))
 		{
 			NomsIntrouvables.Add(Nom);
-			UE_LOG(LogGardeFrontiere, Warning,
-				TEXT("Visage : '%s' absent de %s — la valeur ne sera jamais ecrite. ")
-				TEXT("Verifier les variables flottantes de l'AnimBP facial."),
+			UE_LOG(LogGardeFrontiere, Verbose,
+				TEXT("Visage : '%s' absent de %s — la valeur ne sera jamais ecrite."),
 				*Nom.ToString(), *Anim->GetClass()->GetName());
 		}
 		return false;
@@ -111,6 +118,10 @@ void UAgentFaceComponent::AppliquerMelange(const FMelangeEmotion& M)
 			++Ecrits;
 		}
 	}
+	// NB : EcrireFlottant journalise chaque variable absente en Verbose et
+	// non en Warning. Avec Face_AnimBP, les SEPT le sont — c'est attendu
+	// (docs/EMOTIONS-VS-LIPSYNC.md), et sept avertissements par replique
+	// ne feraient que noyer le journal. Le resume ci-dessous suffit.
 
 	if (VitesseFondu > 0.f)
 	{
