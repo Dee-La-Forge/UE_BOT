@@ -24,8 +24,19 @@ stt:
   # marge (46 % d'usage releve en session). A remesurer ; revenir a small
   # si la latence STT redevient le poste dominant.
   modele: "medium"    # tiny | base | small | medium | large-v3
-  peripherique: "cuda"
-  type_calcul: "float16"
+  # cpu SUR CE POSTE, cuda SUR LA BORNE.
+  #
+  # La GTX 1060 n'a que 6 Go, et le rendu Unreal en consomme l'essentiel
+  # des qu'une scene MetaHuman s'affiche : mesure le 30/07/2026, 4953 Mio
+  # sur 6144 avec l'editeur SIMPLEMENT OUVERT. llama.cpp se faisait alors
+  # evincer, et sa premiere generation passait de 1,9 s a plus de 31 s —
+  # au-dela du delai d'abandon, la borne se fermait avant d'avoir parle.
+  #
+  # Whisper sur CPU rend ce gigaoctet au LLM. C'est plus lent a
+  # transcrire, mais sur ce poste il n'y a de toute facon pas de micro.
+  # La borne, elle, a 24 Go : y remettre cuda/float16.
+  peripherique: "cpu"
+  type_calcul: "int8"
   langue: "fr"
   # Amorce donnee a Whisper a chaque transcription. Sur un fragment court
   # et ambigu, le modele complete avec le vocabulaire de l'amorce plutot

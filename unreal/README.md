@@ -80,6 +80,19 @@ Le micro est par ailleurs **sourd pendant que l'agent est audible** (flux,
 tampon ACE, marge `MargeEchoApresReplique`) : sans ce garde, la voix TTS
 captee par le micro repartait au sidecar comme parole du visiteur.
 
+## AVANT LA MISE EN SERVICE — reglages de diagnostic a annuler
+
+Ils rendent la mise au point possible sur un poste sans LiDAR, sans micro
+et sans RTX. Sur la borne, ils doivent tous repasser a leur valeur reelle.
+
+| Ou | Reglage | Poste de dev | Borne |
+|---|---|---|---|
+| `unreal/Config/DefaultEngine.ini` | `gf.SessionAuto` | `3` (ouvre une session sans capteur) | **`0`** |
+| `sidecar/config.yaml` | `stt.peripherique` / `type_calcul` | `cpu` / `int8` (la 1060 n'a pas la VRAM) | **`cuda` / `float16`** |
+| `GuardSessionManager` | `bAfficherEtatEcran` | coche | **decoche** |
+| `LidarPresenceComponent` | `bTracerReleves` | coche | **decoche** |
+| `GuardSessionManager` | `bActiverCapteur` | sans effet ici (pas de COM4) | **coche** |
+
 ## Reste a faire
 
 - [x] ~~Trancher : emotions ou lipsync ?~~ **Les deux** : l'emotion du LLM
