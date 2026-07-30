@@ -41,6 +41,43 @@ Le plugin `NV_ACE_Reference` v2.5.0rc3 n'est publie que pour UE **5.4, 5.5 et
 faire, parce que le plugin pese 4 Go et n'est pas versionne — a la prochaine
 reinstallation, tout ceci serait perdu.
 
+## Face_AnimBP : la piece qui ne vient d'aucun des deux projets
+
+`UAvatarSwitcherComponent::PreparerAudio2Face` impose au maillage facial
+l'AnimBP suivant, au spawn de chaque avatar :
+
+```
+/Game/MetaHumans/Common/Face/Face_AnimBP.Face_AnimBP_C
+```
+
+Il porte le noeud `ApplyACEAnimation` et la correspondance ARKit — c'est
+lui qui recoit la pose d'Audio2Face. **Il ne vient NI des MetaHumans, NI
+de l'ancien projet** : il est copie du projet d'exemple Kairos de NVIDIA,
+
+```
+https://developer.nvidia.com/downloads/assets/ace/aceunrealsample-1.0.0.7z
+```
+
+et depose a la main dans `Content/MetaHumans/Common/Face/`. Or ce dossier
+est **hors git** (les 3,4 Go d'assets migres). Consequence : une remise a
+plat le perd, et rien ne le reclame avant le premier spawn.
+
+Symptome, releve le 30/07/2026 sur un poste remonte de zero :
+
+```
+LogGardeFrontiere: Error: Avatars : AnimBP facial introuvable
+                   (/Game/MetaHumans/Common/Face/Face_AnimBP.Face_AnimBP_C)
+LogGardeFrontiere: Warning: Visage : 'Neutral' absent de Convai_MetaHuman_FaceAnim_C
+```
+
+Le second message est la consequence du premier : faute de Face_AnimBP,
+le maillage reste sur `Convai_MetaHuman_FaceAnim`, dont les variables
+d'emotion ne portent pas les noms attendus — le visage ne bouge plus du
+tout, ni par ACE ni par les emotions.
+
+Sur une machine sans RTX (voir ci-dessus), l'absence est sans consequence
+visible puisque A2F ne tourne pas. **Sur la borne, elle est bloquante.**
+
 ## Origine des paquets
 
 Telechargement depuis `developer.nvidia.com`, **compte connecte requis** :

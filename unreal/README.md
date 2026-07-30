@@ -107,6 +107,11 @@ captee par le micro repartait au sidecar comme parole du visiteur.
 
 ### Assets migres
 
+> ⚠️ **`Content/MetaHumans/Common/Face/Face_AnimBP` ne vient d'aucun des
+> deux projets** : il est extrait du projet d'exemple Kairos de NVIDIA et
+> depose a la main. Sans lui, le visage ne bouge plus du tout — ni par
+> Audio2Face, ni par les emotions. Voir `patches/NV_ACE_Reference-UE5.7.md`.
+
 | Depuis l'ancien projet | Poids |
 |---|---|
 | `Content/MetaHumans/AgentGermain` | 721 Mo |
