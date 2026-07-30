@@ -1,4 +1,4 @@
-#include "GuardSessionManager.h"
+﻿#include "GuardSessionManager.h"
 
 #include "GardeFrontiere.h"
 #include "SidecarClient.h"
@@ -531,7 +531,7 @@ void AGuardSessionManager::TransmettreParoleVisiteur(
 		if (Maintenant - InstantDernierRepetez >= 6.0)
 		{
 			InstantDernierRepetez = Maintenant;
-			DireRepliqueDeSecours(TEXT("Repetez."));
+			DireRepliqueDeSecours(TEXT("Répétez."));
 		}
 	}
 }
@@ -957,7 +957,19 @@ void AGuardSessionManager::OuvrirLaScene()
 	else
 	{
 		// Mode degrade : la borne accueille quand meme.
-		DireRepliqueDeSecours(TEXT("Papiers. Garde-frontiere."));
+		//
+		// Cette phrase disait « Papiers. Garde-frontiere. » jusqu'au
+		// 31/07/2026. Or « papiers » viole une regle ABSOLUE de la persona :
+		// Macerio ne demande jamais de passeport, de visa, de document ni
+		// de preuve materielle. Le scenario l'avait corrigee de son cote
+		// (repli.accueil), sa copie ici ne l'avait pas suivi — et c'est
+		// justement en mode degrade, quand il ne reste que ce repli, que
+		// l'agent disait l'exact contraire du personnage.
+		//
+		// Meme texte que scenario/agent.yaml -> repli.accueil. La
+		// duplication est assumee : ce chemin sert quand le sidecar est
+		// INJOIGNABLE, donc quand ce fichier-la n'est pas lisible.
+		DireRepliqueDeSecours(TEXT("Macerio, contrôle frontalier. Déclinez votre identité."));
 	}
 }
 
@@ -1183,7 +1195,7 @@ void AGuardSessionManager::SurPanneIA(const FString& Raison)
 	if (Phase != EGuardPhase::Veille && !bPanneAnnoncee)
 	{
 		bPanneAnnoncee = true;
-		DireRepliqueDeSecours(TEXT("Poste ferme. Repassez plus tard."));
+		DireRepliqueDeSecours(TEXT("Poste fermé. Repassez plus tard."));
 	}
 
 	if (UWorld* Monde = GetWorld())

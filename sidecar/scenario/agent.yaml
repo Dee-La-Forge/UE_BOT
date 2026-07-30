@@ -15,6 +15,43 @@
 nom: "Macerio"
 metahuman: "BP_AgentGermain"
 
+# --- Accueil recite -----------------------------------------------------
+# La replique que TOUT visiteur entend, et la seule dont on maitrise le
+# texte au mot pres. Recitee, pas generee : voir scenario.intro_fixe dans
+# config.yaml pour la raison.
+#
+# ACCENTUE : ce texte va DIRECTEMENT a Piper, sans passer par le modele.
+#
+# UNE PHRASE PAR LIGNE, et ce n'est pas cosmetique. Le pipeline decoupe sur
+# la ponctuation finale et synthetise phrase par phrase : chaque ligne est
+# une trame audio, et le premier son part des la PREMIERE synthetisee.
+#
+# D'ou « Halte. » en ouverture. Mesure du 31/07/2026 :
+#
+#   « Macerio, controle frontalier. [...] »   2 phrases   premier son 322 ms
+#   « Halte. [...] »                          5 phrases   premier son  55 ms
+#
+# Le texte deux fois plus long demarre SIX FOIS plus vite, parce que sa
+# premiere phrase tient en un mot. Allonger l'accueil ne coute donc rien en
+# reactivite — la synthese va onze fois plus vite que la lecture (701 ms
+# pour 7,6 s de parole) et garde toujours son avance. Le vrai plafond est
+# la patience du visiteur, pas la machine.
+#
+# CE QU'ON NE PEUT PAS Y METTRE. La persona l'interdit, et ces regles ont
+# ete respectees ici :
+#   - expliquer son role, la raison de la presence du visiteur, ou le
+#     deroulement du controle
+#   - demander un papier, un document, une preuve materielle
+#   - designer le genre du visiteur
+#   - tutoyer
+# Ce qu'on gagne en longueur doit donc etre de la PRESENCE — autorite et
+# pression — jamais de l'explication.
+accueil: |
+  Halte.
+  Poste de contrôle frontalier. Agent Macerio.
+  Vous êtes enregistré à compter de cet instant.
+  Déclinez votre identité.
+
 # --- Personnalite -------------------------------------------------------
 # Transcrit de l'onglet Character du dashboard Convai, fourni le 29/07/2026.
 # Ce fichier portait jusque-la un avertissement : le Narrative Design donnait
@@ -163,9 +200,26 @@ repli:
   # JAMAIS de passeport, de visa, de document ni de preuve materielle. Le
   # repli disait donc l'exact contraire du personnage, precisement dans le
   # cas ou le modele est indisponible et ou il ne reste que lui.
-  accueil: "Macerio, controle frontalier. Declinez votre identite."
-  incompris: "Repetez."
+  # (L'accueil NOMINAL n'est plus ici : voir la cle `accueil` de premier
+  # niveau. Celui-ci reste le repli d'URGENCE, et doit rester court — il ne
+  # sert que quand quelque chose est deja casse.)
+  #
+  # ACCENTUES, seuls de tout ce fichier — et c'est deliberé.
+  #
+  # Le reste du scenario est lu par le MODELE, qui s'accommode de l'ASCII.
+  # Ces six phrases-la, non : elles vont directement a Piper, sans
+  # intermediaire. Un synthetiseur francais ne devine pas les accents
+  # manquants, il prononce ce qu'on lui donne.
+  #
+  # Mesure du 31/07/2026 sur la meme phrase : 3,89 s en ASCII contre 3,74 s
+  # accentuee. Une difference de duree signifie une difference de
+  # prononciation — le moteur ne disait pas la meme chose.
+  #
+  # La convention ASCII du depot vise le CODE et les COMMENTAIRES, pas ce
+  # qui se dit a voix haute.
+  accueil: "Macerio, contrôle frontalier. Déclinez votre identité."
+  incompris: "Répétez."
   accepte: "C'est bon. Passez."
-  refus: "Acces refuse. Circulez."
-  sortie: "Degagez la zone."
-  indisponible: "Poste ferme. Repassez plus tard."
+  refus: "Accès refusé. Circulez."
+  sortie: "Dégagez la zone."
+  indisponible: "Poste fermé. Repassez plus tard."
