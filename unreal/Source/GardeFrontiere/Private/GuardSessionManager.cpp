@@ -21,6 +21,7 @@
 #include "Engine/Engine.h"
 #include "Engine/World.h"
 #include "HAL/IConsoleManager.h"
+#include "EngineUtils.h"   // TActorIterator, pour les commandes console
 
 // Ouvre une session sans capteur, N secondes apres le demarrage.
 //
@@ -40,6 +41,55 @@ static TAutoConsoleVariable<float> CVarSessionAuto(
 	TEXT("Ouvre une session N secondes apres le demarrage, sans capteur.\n")
 	TEXT("Mise au point sans LiDAR. 0 = desactive."),
 	ECVF_Default);
+
+// Simule le capteur de presence, dans les deux sens.
+//
+// gf.SessionAuto ouvre une session au demarrage, et c'est tout ce qu'on
+// savait faire sans LiDAR : impossible de simuler le DEPART du visiteur,
+// donc impossible d'exercer la fin du scenario — sortie de zone, glitch,
+// permutation d'avatar, retour en veille. Cette moitie-la ne se voyait
+// qu'au hasard d'un abandon par delai.
+//
+//   gf.Presence 1   un visiteur se presente
+//   gf.Presence 0   il quitte la zone
+//
+// Passe par ULidarPresenceComponent::ForcerPresence, donc par le MEME
+// chemin que le capteur reel — hysteresis et fronts compris. Simuler en
+// appelant directement la machine a etats aurait teste un chemin qui
+// n'existe pas sur la borne.
+static void GardeFrontiere_ForcerPresence(const TArray<FString>& Args, UWorld* Monde)
+{
+	if (!Monde)
+	{
+		return;
+	}
+
+	// Sans argument : on considere qu'un visiteur arrive. C'est le geste le
+	// plus frequent en mise au point, et le plus sur — au pire on ouvre une
+	// session de trop.
+	const bool bPresent = (Args.Num() == 0) || (Args[0] != TEXT("0"));
+
+	int32 Touches = 0;
+	for (TActorIterator<AGuardSessionManager> It(Monde); It; ++It)
+	{
+		if (ULidarPresenceComponent* Capteur = It->Presence)
+		{
+			Capteur->ForcerPresence(bPresent);
+			++Touches;
+		}
+	}
+
+	UE_LOG(LogGardeFrontiere, Warning,
+		TEXT("DIAGNOSTIC : gf.Presence %d applique a %d borne(s)"),
+		bPresent ? 1 : 0, Touches);
+}
+
+static FAutoConsoleCommandWithWorldAndArgs CmdPresence(
+	TEXT("gf.Presence"),
+	TEXT("Simule le capteur de presence : 1 = visiteur present, 0 = parti.\n")
+	TEXT("Mise au point sans LiDAR. Sans argument, equivaut a 1."),
+	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(
+		&GardeFrontiere_ForcerPresence));
 
 AGuardSessionManager::AGuardSessionManager()
 {
@@ -672,7 +722,7 @@ void AGuardSessionManager::TerminerSession(EGuardFinDeSession Raison)
 	OnSessionFinie.Broadcast(Raison);
 
 	// La zone se libere : c'est MAINTENANT qu'on change de visage, derriere
-	// le glitch, sans temoin. Le visiteur suivant trouvera un autre agent
+	// le glitch, SANS TEMOIN. Le visiteur suivant trouvera un autre agent
 	// sans avoir vu la substitution — c'est tout l'objet du dispositif.
 	//
 	// « Sans temoin » se VERIFIE : apres un abandon, le visiteur est souvent
@@ -681,6 +731,19 @@ void AGuardSessionManager::TerminerSession(EGuardFinDeSession Raison)
 	// rend que des fronts, aucun nouveau presence.detectee ne viendra tant
 	// que la zone ne se vide pas. Zone occupee : substitution differee, et
 	// nouvelle session reprogrammee.
+	//
+	// ALLER-RETOUR DU 31/07/2026, note pour qu'on ne le refasse pas. Cette
+	// regle a ete renversee dans la journee — substitution jouee DEVANT le
+	// visiteur obstine — sur une lecture trop hative de « quand le visiteur
+	// refuse de quitter la zone, puis le glitch fx ». Le deroule complet du
+	// Narrative Design a tranche dans l'autre sens le soir meme : le glitch
+	// appartient au DEPART.
+	//
+	//   verdict -> tampon accepte -> 3 s -> tampon « quittez la zone »
+	//   + invitation verbale -> LE VISITEUR SORT -> glitch -> substitution
+	//
+	// La substitution est la recompense du depart, pas la sanction de
+	// l'obstination.
 	//
 	// Declenche apres le Arreter() du nettoyage ci-dessus, sinon on eteindrait
 	// l'effet qu'on vient d'allumer.
@@ -1159,10 +1222,57 @@ void AGuardSessionManager::SurDelaiSortie()
 	}
 	OnDemandeSortieZone.Broadcast();
 
+	// L'AGENT LE DIT, il ne se contente pas de l'afficher.
+	//
+	// Jusqu'au 31/07/2026 cette phase etait entierement muette : le tampon
+	// s'affichait, l'evenement partait, et le visiteur n'entendait rien.
+	// Devant du public, un panneau muet ne se remarque pas — on regarde
+	// l'agent, pas l'ecran. Et personne ne quitte une zone dont on ne lui a
+	// pas demande de sortir.
+	DireRepliqueDeSecours(TexteSortieZone);
+	ArmerRelanceSortie();
+
 	// A partir d'ici, seul le depart du visiteur clot la session. On garde
 	// toutefois un abandon arme : sans lui, un visiteur qui reste plante
 	// devant la borne la bloquerait indefiniment.
 	ArmerAbandon();
+}
+
+void AGuardSessionManager::ArmerRelanceSortie()
+{
+	UWorld* Monde = GetWorld();
+	if (!Monde || DelaiRelanceSortie <= 0.f)
+	{
+		return;
+	}
+	Monde->GetTimerManager().SetTimer(
+		MinuterieRelanceSortie, this, &AGuardSessionManager::SurRelanceSortie,
+		DelaiRelanceSortie, false);
+}
+
+void AGuardSessionManager::SurRelanceSortie()
+{
+	// La phase a pu changer pendant l'attente : visiteur parti, abandon,
+	// nouvelle session. Repeter « degagez la zone » devant un hall vide, ou
+	// pire devant le visiteur SUIVANT, serait absurde.
+	if (Phase != EGuardPhase::SortieZone)
+	{
+		return;
+	}
+
+	// Rien tant que l'agent s'entend encore : la relance se superposerait a
+	// sa propre voix, exactement les deux lectures simultanees que
+	// bRepliqueEnCours et le suivi de lecture servent a empecher.
+	if (AgentAudible())
+	{
+		ArmerRelanceSortie();
+		return;
+	}
+
+	UE_LOG(LogGardeFrontiere, Log,
+		TEXT("Sortie de zone : le visiteur s'attarde — relance"));
+	DireRepliqueDeSecours(TexteSortieZone);
+	ArmerRelanceSortie();
 }
 
 void AGuardSessionManager::SurPanneIA(const FString& Raison)
@@ -1304,6 +1414,7 @@ void AGuardSessionManager::AnnulerMinuteries()
 		T.ClearTimer(MinuterieSortie);
 		T.ClearTimer(MinuterieSurveillanceIA);
 		T.ClearTimer(MinuterieRelance);
+		T.ClearTimer(MinuterieRelanceSortie);
 		T.ClearTimer(MinuterieSuiviLecture);
 
 		// MinuterieReprise aussi : TerminerSession la REARME apres cet

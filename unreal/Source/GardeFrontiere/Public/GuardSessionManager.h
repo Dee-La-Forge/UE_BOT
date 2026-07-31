@@ -182,10 +182,20 @@ public:
 	 * visiteur se tait encore apres la relance, c'est l'abandon
 	 * (DelaiAbandon) qui tranche, sinon les deux minuteries se
 	 * repousseraient l'une l'autre indefiniment.
+	 *
+	 * 3 s, valeur du Narrative Design (31/07/2026), abaissee depuis 12 s.
+	 *
+	 * RESERVE, notee pour qu'on sache quoi regarder si ca se passe mal :
+	 * c'est COURT. Le compteur part de la fin de la replique de l'agent, pas
+	 * du debut d'un silence reel — le visiteur doit encore comprendre,
+	 * reflechir, puis parler. Trois secondes suffisent a peine, et l'agent
+	 * risque de couper la parole a quelqu'un qui commencait a repondre.
+	 * 5 a 6 s serait plus sur devant du public. Se regle dans le detail
+	 * panel, sans recompiler : a rejuger a la premiere exposition.
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Garde Frontiere|Delais",
 		meta = (ClampMin = "1.0", Units = "s"))
-	float DelaiReponseVisiteur = 12.f;
+	float DelaiReponseVisiteur = 3.f;
 
 	/** Delai total sans interaction avant abandon de la session. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Garde Frontiere|Delais",
@@ -196,13 +206,46 @@ public:
 	 * Delai apres le verdict avant d'inviter le visiteur a sortir.
 	 * Laisse le temps de lire le tampon.
 	 *
-	 * 7 s : valeur relevee dans l'ancien Blueprint
-	 * (Set Timer by Function Name "SwitchToExitStamp", Time = 7.0).
-	 * J'avais suppose 4 s.
+	 * 3 s, valeur du Narrative Design (31/07/2026) : « au bout de 3 secondes,
+	 * si le visiteur est encore present, le tampon quittez-la-zone remplace
+	 * le precedent ».
+	 *
+	 * Valait 7 s, releve dans l'ancien Blueprint (Set Timer by Function Name
+	 * "SwitchToExitStamp", Time = 7.0) — c'etait donc une valeur d'usage,
+	 * pas une intention. L'intention est celle-ci.
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Garde Frontiere|Delais",
 		meta = (ClampMin = "0.0", Units = "s"))
-	float DelaiAvantSortie = 7.f;
+	float DelaiAvantSortie = 3.f;
+
+	/**
+	 * Ce que l'agent DIT en entrant en phase de sortie de zone.
+	 *
+	 * Jusqu'au 31/07/2026 il ne disait rien : le tampon « quittez la zone »
+	 * s'affichait, l'evenement partait vers la scenographie, et le visiteur
+	 * n'entendait pas un mot. Devant du public, un panneau muet ne se
+	 * remarque pas — on regarde l'agent, pas l'ecran.
+	 *
+	 * Recitee et non generee, comme l'accueil : la session est close cote
+	 * sidecar, et c'est une phrase que TOUT visiteur entend. Meme texte que
+	 * scenario/agent.yaml -> repli.sortie.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Garde Frontiere|Scenographie")
+	FString TexteSortieZone = TEXT("Dégagez la zone.");
+
+	/**
+	 * Toutes les N secondes, l'agent repete son injonction tant que le
+	 * visiteur n'est pas parti.
+	 *
+	 * Le dire une fois ne suffit pas : quelqu'un qui n'a pas compris, ou qui
+	 * s'attarde, n'a aucune raison de bouger. L'abandon (DelaiAbandon) reste
+	 * la borne haute — la relance ne prolonge rien, elle occupe l'attente.
+	 *
+	 * 0 = ne jamais repeter.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Garde Frontiere|Delais",
+		meta = (ClampMin = "0.0", Units = "s"))
+	float DelaiRelanceSortie = 12.f;
 
 	/** Delai de reconnexion au sidecar apres une panne. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Garde Frontiere|Sidecar",
@@ -484,6 +527,8 @@ private:
 	void AnnulerMinuteries();
 	UFUNCTION() void SurAbandon();
 	UFUNCTION() void SurDelaiSortie();
+	UFUNCTION() void SurRelanceSortie();
+	void ArmerRelanceSortie();
 	UFUNCTION() void TenterReconnexion();
 
 	// Surveillance applicative : le sidecar doit repondre, pas seulement
@@ -571,6 +616,7 @@ private:
 	FTimerHandle MinuterieSurveillanceIA;
 	FTimerHandle MinuterieRelance;
 	FTimerHandle MinuterieReprise;
+	FTimerHandle MinuterieRelanceSortie;
 
 	/**
 	 * Sonde la lecture apres parole.fin, tant que l'agent reste audible.
