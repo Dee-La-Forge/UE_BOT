@@ -91,6 +91,25 @@ PROFILS: dict[str, list[str]] = {
 }
 
 
+# -- Le verdict doit DEPENDRE de ce que le visiteur a repondu ------------
+#
+# Un verdict rendu ne suffit pas : encore faut-il qu'il soit le bon. Releve
+# le 31/07/2026 — les TROIS profils recevaient REFUSE, y compris le
+# visiteur cooperatif, coherent et sans danger.
+#
+# Ce n'est pas un detail de dialogue, c'est une branche morte du scenario :
+# si personne n'est jamais accepte, le tampon « accepte » et toute sa
+# scenographie ne jouent jamais. La borne n'a plus qu'une fin.
+#
+# None = les deux verdicts se defendent, on n'affirme rien. Un visiteur
+# evasif PEUT legitimement etre refuse ; c'est meme le metier de l'agent.
+VERDICT_ATTENDU: dict[str, str | None] = {
+    "cooperatif": "ACCEPTE",
+    "evasif": None,
+    "menacant": "REFUSE",
+}
+
+
 # -- Regles verifiees -----------------------------------------------------
 
 DOCUMENTS = re.compile(
@@ -142,6 +161,14 @@ class Entretien:
             self.verdict is not None,
             f"verdict rendu : {self.verdict or 'AUCUN'}",
         ))
+
+        attendu = VERDICT_ATTENDU.get(self.profil)
+        if attendu is not None:
+            r.append((
+                self.verdict == attendu,
+                f"verdict COHERENT avec les reponses : {self.verdict or 'AUCUN'} "
+                f"(attendu {attendu} pour un visiteur « {self.profil} »)",
+            ))
 
         fautifs = [t for t in agent if DOCUMENTS.search(t)]
         r.append((not fautifs, "aucune demande de document"

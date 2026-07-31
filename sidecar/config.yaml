@@ -132,11 +132,58 @@ tts:
   #   chatterbox  350 M parametres, GPU de preference. Voix incarnee, et
   #               surtout CLONAGE : voir echantillon_voix ci-dessous.
   #               Licence MIT.
-  moteur: "piper"
+  # VOIX CLONEE — c'est la voix du dispositif, pas un reglage de confort.
+  #
+  # Choisie et validee a l'ecoute le 30/07/2026 : les voix generiques des
+  # modeles sont inutilisables (accent americain pour la turbo, canadien
+  # pour la multilingue), et Piper est mecanique. L'humanite vient de
+  # l'echantillon, pas du moteur.
+  #
+  # SUR CE POSTE, C'EST INUTILISABLE, et il faut le savoir avant d'essayer :
+  # mesure du 31/07/2026, 383 s de calcul pour 7,7 s de parole — x0,02 du
+  # temps reel, soit plus de six minutes pour l'accueil. La 1060 n'a pas la
+  # VRAM libre (llama.cpp l'occupe) et Chatterbox retombe sur le
+  # processeur. La borne, avec ses 24 Go, est le seul endroit ou cette
+  # configuration se juge.
+  #
+  # POUR TESTER LOCALEMENT, une ligne suffit — remettre :
+  #     moteur: "piper"
+  # avec voix: "fr_FR-tom-medium" (masculine ; siwis est feminine, ce qui
+  # ne convient pas au personnage).
+  moteur: "chatterbox-multi"
 
   # --- Piper ---
-  voix: "fr_FR-siwis-medium"   # sortie a 22 050 Hz — le champ `taux` des
-                               # parole.audio fait foi cote Unreal
+  # VOIX MASCULINE — et c'est un pis-aller assume SUR CE POSTE.
+  #
+  # La voix voulue pour Macerio est une VOIX CLONEE (chatterbox +
+  # tts.echantillon_voix), validee a l'ecoute le 30/07/2026. Elle est
+  # inutilisable ici : mesure du 31/07/2026, 383 s de calcul pour 7,7 s de
+  # parole, soit x0,02 du temps reel. La 1060 n'a pas la VRAM libre —
+  # llama.cpp l'occupe — et Chatterbox retombe sur le processeur. Sur la
+  # borne (3090 Ti, 24 Go) ce chiffre n'a rien a voir.
+  #
+  # En attendant, Piper. Mais fr_FR-siwis-medium est une voix FEMININE,
+  # alors que Macerio est un garde masculin joue par un MetaHuman masculin :
+  # la borne parlait d'une voix qui ne pouvait pas etre la sienne, et
+  # personne ne l'avait releve de toute la mise au point.
+  #
+  # Trois voix masculines francaises etaient deja telechargees :
+  #
+  #   fr_FR-tom-medium     44 100 Hz   8,96 s sur l'accueil   RETENUE
+  #   fr_FR-gilles-low     16 000 Hz  12,21 s   qualite « low », diction lente
+  #   fr_FR-upmc-medium    22 050 Hz   7,16 s   multi-locuteur, genre du
+  #                                             locuteur par defaut incertain
+  #
+  # ATTENTION AU TAUX : tom sort en 44 100 Hz, le double de siwis. Rien
+  # n'est code en dur — le champ `taux` du descripteur parole.audio fait
+  # foi, et SidecarClient le lit dynamiquement (TauxAudioAttendu). C'est
+  # justement pour cela que ce champ existe. A verifier en session reelle :
+  # aucune trame ne doit etre rejetee.
+  #
+  # SUR LA BORNE, remettre le clonage :
+  #   moteur: "chatterbox-multi"
+  #   echantillon_voix: "voix/homme_ref.wav"
+  voix: "fr_FR-tom-medium"
   vitesse: 1.0
   volume: 1.0
 
@@ -150,8 +197,15 @@ tts:
   # pas du moteur.
   #
   # Les echantillons ne sont PAS versionnes (voir .gitignore) : ce sont
-  # des enregistrements de personnes, et le depot est public.
-  # echantillon_voix: "voix/garde.wav"
+  # des enregistrements de personnes, et le depot est public. Ils vivent
+  # dans sidecar/voix/ sur la machine, et nulle part ailleurs.
+  #
+  # homme_ref.wav est la voix de l'agent en poste. femme_ref.wav est celle
+  # du SECOND avatar, apres substitution — elle n'est pas encore branchee :
+  # le sidecar n'a aujourd'hui qu'une seule voix chargee et ignore meme
+  # quel avatar est en scene. Faire suivre la voix a l'avatar demande
+  # qu'Unreal annonce l'avatar courant, donc une evolution du contrat.
+  echantillon_voix: "voix/homme_ref.wav"
   #
   # 0 = diction neutre. Monter donne un jeu plus appuye — un
   # garde-frontiere n'a pas a surjouer.

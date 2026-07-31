@@ -280,14 +280,42 @@ class Pipeline:
         )
 
         if e.nb_questions >= e.questions_max:
+            # LE RAPPEL D'INTERROGATOIRE EST RETIRE ICI, et c'est tout
+            # l'objet de ce bloc.
+            #
+            # Il etait joint au verdict jusqu'au 31/07/2026. Or il ordonne
+            # de commencer par « doute, reproche, incoherence relevee » :
+            # le modele etait amorce a la suspicion a l'instant precis ou il
+            # devait juger. S'y ajoutait l'historique, plein des propres
+            # remarques de l'agent — « Incoherence relevee », « vous
+            # mentez » — qui se lisent comme des preuves contre le visiteur,
+            # quoi que celui-ci ait reellement repondu.
+            #
+            # Resultat mesure par bench/dialogue_test.py : REFUSE sur les
+            # TROIS profils, y compris le visiteur cooperatif, coherent et
+            # sans danger. L'agent se refusait sur son propre ton.
+            #
+            # Ce n'etait pas un defaut de dialogue mais une BRANCHE MORTE du
+            # scenario : personne n'etant jamais accepte, le tampon
+            # « accepte » et toute sa scenographie ne jouaient jamais. La
+            # borne n'avait qu'une seule fin.
+            #
+            # On donne donc des criteres FACTUELS, portant sur ce que le
+            # visiteur a dit — verifiables, la ou « coherent et sans
+            # danger » demandait au modele de juger une impression.
             return (
-                f"{rappel}\n"
-                "[Le controle est termine. Rends ton verdict MAINTENANT, dans "
-                "une replique separee.\n"
-                f"Si le visiteur est coherent et sans danger : "
+                "[Le controle est termine. Tu ne poses PLUS de question.\n"
+                "Rends ton verdict MAINTENANT, dans une replique separee.\n"
+                "Juge sur CE QUE LE VISITEUR A REPONDU, et sur rien d'autre. "
+                "Le doute que tu as exprime pendant l'entretien etait ton "
+                "metier : ce n'est pas une preuve contre lui.\n"
+                "S'il a decline son identite, donne un motif de visite "
+                "plausible et ne s'est pas contredit : "
                 f"{s['verdicts']['accepte']['objectif'].strip()}\n"
-                f"S'il est incoherent, suspect ou menacant : "
-                f"{s['verdicts']['refus']['objectif'].strip()}]"
+                "S'il a refuse de repondre, s'est contredit, ou s'est montre "
+                "menacant : "
+                f"{s['verdicts']['refus']['objectif'].strip()}\n"
+                "VOUVOIE-le : « vous », jamais « tu ».]"
             )
 
         return rappel
