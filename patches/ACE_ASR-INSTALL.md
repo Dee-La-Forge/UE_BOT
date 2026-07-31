@@ -85,6 +85,46 @@ contrairement a `NV_ACE_Reference` (voir `NV_ACE_Reference-UE5.7.md`).
    Sans cette ligne, une premiere evaluation transcrirait du francais avec
    un modele anglais et conclurait — a tort — que Riva ne vaut rien.
 
+## 5. PATCH A REAPPLIQUER — une ligne
+
+**Sans lui, les deux moteurs ne sont pas comparables.** L'API Blueprint du
+plugin n'expose que la capture micro EN DIRECT ; impossible d'y faire
+entrer un fichier, donc impossible de faire passer le MEME audio dans Riva
+et dans faster-whisper. Comparer deux moteurs sur deux enregistrements
+differents ne prouve rien.
+
+La methode existe pourtant, dans un en-tete **public** — il lui manque
+seulement d'etre exportee du DLL.
+
+Fichier : `Source/ACE_ASR/Public/ACEASRNVIGIRuntime.h`, ligne 21.
+
+```cpp
+class ACE_ASR_API FACEASRNVIGIRuntime     // etait : class FACEASRNVIGIRuntime
+```
+
+C'est tout. Les chemins d'inclusion NVIGI sont deja declares en
+`PublicSystemIncludePaths` dans `ACE_ASR.Build.cs` : aucun autre reglage
+n'est necessaire pour qu'un module tiers inclue cet en-tete.
+
+**Verifier que le patch a pris** — recompiler ne suffit pas, le fichier
+compilait deja avant. Il faut constater l'export :
+
+```powershell
+$d = "...\VC\Tools\MSVC\<version>\bin\Hostx64\x64\dumpbin.exe"
+& $d /EXPORTS "unreal\Plugins\ACE_ASR\Binaries\Win64\UnrealEditor-ACE_ASR.dll" |
+    Select-String SubmitStreamingAudio
+```
+
+Doit rendre une ligne. Releve le 31/07/2026 : `SubmitStreamingAudio`
+exporte, avec le reste de `FACEASRNVIGIRuntime`.
+
+> Cote GardeFrontiere, la suite reste a ecrire : ajouter `ACE_ASR` aux
+> dependances de `GardeFrontiere.Build.cs`, puis une commande console
+> `gf.RivaTranscrire <dossier>`. **Ce n'est pas anodin** : ce serait une
+> dependance DURE de plus vers un plugin NVIDIA, et le Build.cs porte deja
+> la trace d'un commentaire qui pretendait a tort que le module compilait
+> sans ACE. A trancher au moment de l'ecrire, pas avant.
+
 ## Verification
 
 Au lancement, le journal doit porter :

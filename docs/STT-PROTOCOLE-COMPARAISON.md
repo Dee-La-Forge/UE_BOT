@@ -118,12 +118,21 @@ mais `class FACEASRNVIGIRuntime` **n'est pas marquee `ACE_ASR_API`** : elle
 n'est pas exportee du DLL, et l'appeler depuis le module GardeFrontiere
 echoue a l'edition de liens.
 
-**Patch a appliquer** (une ligne, meme pratique que
+**Patch APPLIQUE le 31/07/2026** (une ligne, meme pratique que
 `patches/NV_ACE_Reference-UE5.7.md`) :
 
 ```cpp
 class ACE_ASR_API FACEASRNVIGIRuntime      // etait : class FACEASRNVIGIRuntime
 ```
+
+Verifie a l'export, et non a la compilation — le fichier compilait deja
+avant : `dumpbin /EXPORTS UnrealEditor-ACE_ASR.dll` rend bien
+`SubmitStreamingAudio`. Les chemins NVIGI etant deja en
+`PublicSystemIncludePaths`, rien d'autre n'etait necessaire.
+
+`unreal/Plugins/` n'etant pas versionne, ce patch est **a reappliquer apres
+toute reinstallation du plugin** — procedure dans
+`patches/ACE_ASR-INSTALL.md`.
 
 Puis, cote GardeFrontiere : une commande console `gf.RivaTranscrire <dossier>`
 qui charge chaque WAV, le pousse dans `SubmitStreamingAudio`, note le texte
