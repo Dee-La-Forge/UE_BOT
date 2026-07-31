@@ -39,6 +39,7 @@ supplementaires arrives pendant une replique sont jetes.
 | Evenement | Charge | Cote Unreal |
 |---|---|---|
 | `session.demarree` | `{"avatar": "BP_AgentGermain"}` | journalise seulement — le glitch/switch a lieu en **fin** de session, zone vide |
+| `visiteur.transcription` | `{"texte": "...", "duree": 2.4}` | **diagnostic pur** : ce que le STT a compris du dernier segment. Rien n'en depend — Unreal peut l'ignorer. Emis AVANT le `parole.debut` du tour qu'il declenche, pour que le journal donne la question avant la reponse. `texte` vide = rien compris (l'agent enchainera sur `repli.incompris`) |
 | `parole.debut` | `{"texte": "...", "emotion": "Stare"}` | pose faciale pressentie via `E_Emotions` ; `bRepliqueEnCours` s'ouvre |
 | `parole.audio` | `{"seq": 0, "taux": 22050, "texte": "...", "premier": true}` | retient `taux` pour la frame binaire qui suit |
 | *frame binaire* | PCM16 mono, au `taux` annonce | lecture : Audio2Face (voix + visage), repli `Voix` sinon |

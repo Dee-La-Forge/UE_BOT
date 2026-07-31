@@ -39,6 +39,12 @@ sys.path.insert(0, str(RACINE))
 
 from src.tts import Synthetiseur   # noqa: E402
 
+# Le WER vit dans l'autre banc et y est couvert par six cas de controle.
+# Deux implementations d'une meme mesure divergent toujours : celle qui
+# sert de reference dans un rapport, et celle qui sert de garde-fou ici,
+# doivent etre la meme fonction. (bench/ est sur sys.path : le script y est.)
+from comparer_stt import wer   # noqa: E402
+
 URL = "ws://127.0.0.1:8765"
 TAUX_ATTENDU = 16000     # ce que le sidecar donne a Whisper
 MAX_TOURS = 16           # garde-fou : un entretien qui ne finit pas est un echec
@@ -132,6 +138,11 @@ class Entretien:
     def __init__(self, profil: str):
         self.profil = profil
         self.tours: list[tuple[str, str]] = []   # (qui, texte)
+        # (ce que le visiteur a dit, ce que l'agent a entendu). Sans cette
+        # confrontation, une reponse a cote est indiscernable d'une reponse
+        # a du charabia — et les deux ne se corrigent pas au meme endroit :
+        # l'une dans le prompt, l'autre dans le STT.
+        self.transcriptions: list[tuple[str, str]] = []
         self.emotions: list[str] = []
         self.verdict: str | None = None
         self.latences: list[float] = []
@@ -220,6 +231,26 @@ class Entretien:
         r.append((not self.incidents,
                   "aucun incident de transport"
                   + (f" — {self.incidents[:2]}" if self.incidents else "")))
+
+        # CE QUE L'AGENT A ENTENDU. Sans cette mesure, tout verdict porte
+        # sur ce banc est suspect : un agent qui refuse un visiteur
+        # cooperatif a peut-etre raison, s'il a recu du charabia. La
+        # question « le prompt est-il mauvais ? » ne se pose qu'une fois
+        # celle-ci reglee.
+        if self.transcriptions:
+            muettes = [d for d, e in self.transcriptions if not e]
+            r.append((
+                not muettes,
+                f"chaque reponse a ete entendue : {len(muettes)}/"
+                f"{len(self.transcriptions)} non transcrite(s)",
+            ))
+            erreurs = [wer(dit, entendu) for dit, entendu in self.transcriptions]
+            moyen = sum(erreurs) / len(erreurs)
+            r.append((
+                moyen <= 0.30,
+                f"transcription fidele : WER moyen {moyen:.2f} "
+                f"(plafond 0.30) sur {len(erreurs)} reponse(s)",
+            ))
         return r
 
 
@@ -260,6 +291,7 @@ async def jouer(profil: str, reponses: list[str], visiteur: VisiteurSimule) -> E
         await ws.send(json.dumps({"evenement": "presence.detectee"}))
 
         i_reponse = 0
+        dernier_dit = ""
         morceaux: list[str] = []
         depart = time.perf_counter()
 
@@ -282,6 +314,15 @@ async def jouer(profil: str, reponses: list[str], visiteur: VisiteurSimule) -> E
             elif ev == "parole.audio":
                 if (t := d.get("texte")):
                     morceaux.append(t)
+            elif ev == "visiteur.transcription":
+                entendu = (d.get("texte") or "").strip()
+                e.transcriptions.append((dernier_dit, entendu))
+                if not entendu:
+                    print("    entendu   (RIEN COMPRIS)")
+                elif normaliser(entendu) == normaliser(dernier_dit):
+                    print("    entendu   = mot pour mot")
+                else:
+                    print(f"    entendu   « {entendu} »")
             elif ev == "emotion":
                 e.emotions.append(d.get("valeur", "?"))
             elif ev == "verdict":
@@ -305,6 +346,7 @@ async def jouer(profil: str, reponses: list[str], visiteur: VisiteurSimule) -> E
 
                 dit = reponses[i_reponse]
                 i_reponse += 1
+                dernier_dit = dit
                 print(f"    visiteur  {dit}")
                 e.tours.append(("visiteur", dit))
                 # Petite pause : Unreal n'envoie jamais un segment dans la

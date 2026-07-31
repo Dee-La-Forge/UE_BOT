@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import asyncio
 import re
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -363,11 +363,19 @@ class Pipeline:
         audio_visiteur: np.ndarray,
         taux: int = 16000,
         mesure: Mesure | None = None,
+        au_transcrit: Callable[[str, float], Awaitable[None]] | None = None,
     ) -> AsyncIterator[MorceauAudio | Replique]:
         """Traite un tour complet : audio entrant -> audio sortant.
 
         Emet des MorceauAudio au fil de l'eau, puis une Replique finale
         portant l'emotion et le verdict.
+
+        `au_transcrit` est appele des que le STT a rendu son texte, avant
+        toute generation — meme motif que `au_premier_jeton` cote LLM. Il
+        sert a faire REMONTER la transcription : le sidecar la journalisait
+        depuis toujours, mais ne la disait a personne. Or c'est la seule
+        facon de distinguer un agent qui repond mal d'un agent qui a mal
+        entendu, et cette distinction decide de l'endroit ou l'on cherche.
         """
         m = mesure or Mesure()
         m.marquer("debut")
@@ -387,9 +395,17 @@ class Pipeline:
         # repond mal d'un LLM qui recoit du charabia. C'est le meme angle mort
         # qui a masque, tour a tour, une liaison serie muette, des courbes
         # faciales ecrites dans le vide et un flux audio fragmente.
-        _log.info("visiteur (%.2f s) : %s",
-                  audio_visiteur.size / max(taux, 1),
+        duree_audio = audio_visiteur.size / max(taux, 1)
+        _log.info("visiteur (%.2f s) : %s", duree_audio,
                   texte_visiteur if texte_visiteur else "(rien compris)")
+
+        # ATTENDU, et non lance en tache de fond : l'ordre compte. La
+        # transcription doit partir AVANT le parole.debut du tour qu'elle
+        # declenche, sinon le journal donne la reponse avant la question et
+        # devient penible a relire. Le cout est nul — un envoi sur une
+        # socket locale, avant plusieurs centaines de ms de generation.
+        if au_transcrit is not None:
+            await au_transcrit(texte_visiteur, duree_audio)
 
         if not texte_visiteur:
             yield Replique(

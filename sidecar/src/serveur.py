@@ -356,9 +356,25 @@ class Serveur:
 
             mesure = Mesure()
 
+            # Fait remonter CE QUE L'AGENT A ENTENDU, pas seulement ce qu'il
+            # repond. Le sidecar journalisait la transcription depuis
+            # toujours, mais ne la disait a personne : cote Unreal comme au
+            # banc de dialogue, une reponse a cote restait indiscernable
+            # d'une reponse a du charabia — et les deux ne se corrigent pas
+            # au meme endroit. Diagnostic pur : rien n'en depend.
+            async def _remonter_transcription(texte: str, duree: float) -> None:
+                await self._envoyer(
+                    ws, "visiteur.transcription",
+                    texte=texte, duree=round(duree, 2),
+                )
+
             try:
                 await self._jouer_flux(
-                    ws, self.pipeline.tour_de_parole(audio, TAUX_VISITEUR, mesure)
+                    ws,
+                    self.pipeline.tour_de_parole(
+                        audio, TAUX_VISITEUR, mesure,
+                        au_transcrit=_remonter_transcription,
+                    ),
                 )
 
             except websockets.ConnectionClosed:
