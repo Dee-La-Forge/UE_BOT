@@ -146,11 +146,15 @@ tts:
   # processeur. La borne, avec ses 24 Go, est le seul endroit ou cette
   # configuration se juge.
   #
-  # POUR TESTER LOCALEMENT, une ligne suffit — remettre :
-  #     moteur: "piper"
-  # avec voix: "fr_FR-tom-medium" (masculine ; siwis est feminine, ce qui
-  # ne convient pas au personnage).
-  moteur: "chatterbox-multi"
+  # ETAT ACTUEL : piper, POUR POUVOIR TESTER ICI. Ce n'est pas la voix du
+  # dispositif, c'est une doublure. Avec le clonage, chaque replique
+  # depassait DELAI_TTS (10 s) et le sidecar tombait sur son repli — les
+  # tests locaux ne ramaient pas, ils echouaient.
+  #
+  # SUR LA BORNE, une ligne a changer :
+  #     moteur: "chatterbox-multi"
+  # echantillon_voix est deja renseigne plus bas et n'attend que ca.
+  moteur: "piper"
 
   # --- Piper ---
   # VOIX MASCULINE — et c'est un pis-aller assume SUR CE POSTE.
